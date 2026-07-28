@@ -1,0 +1,30 @@
+# Environment
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# Scraper output
+backend/scraper/output/
+*.csv
+!flyer_items_sample.csv
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
