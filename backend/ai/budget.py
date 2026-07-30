@@ -28,6 +28,7 @@ SHOPPER
 - People to feed: {people}
 - Cuisine preferences: {cuisines}
 - Dietary restriction: {restriction}
+- ALREADY HAS AT HOME (do not buy these): {pantry}
 - Store: {merchant}
 
 DEALS ON SALE THIS WEEK AT {merchant} (each line is "NAME | $PRICE | $PER_KG | CATEGORY"):
@@ -69,6 +70,11 @@ HARD RULES — never break these
    directly needs them (e.g. soy sauce for the stir fry). Never as filler.
 4. Every basket item must play a clear role in at least one meal in "meals".
    If an item doesn't appear in any meal's "uses", cut it from the basket.
+5. NEVER put anything the shopper ALREADY HAS AT HOME in the basket — they
+   own it, so buying it again wastes their budget. You MAY still cook with
+   those ingredients: list them in a meal's "uses" freely. The rule is
+   "don't buy it", not "don't use it". (Rule 4 still applies to everything
+   you DO buy.)
 
 OTHER RULES
 - Only choose items from the deals list above, using their real prices.
@@ -89,6 +95,8 @@ OTHER RULES
   budget, set "swap_suggestion" to null.
 - Give 3-4 meals that genuinely fit the shopper's cuisine (a Korean preference
   gets bibimbap / doenjang jjigae, NOT pasta), each using items from the basket.
+  Meals may also lean on what the shopper already has at home — that's free
+  food, so use it.
 """
 
 
@@ -100,11 +108,14 @@ def generate_budget_plan(profile: dict, deals: list[dict]) -> dict:
     """Generate the weekly basket JSON from a profile and the store's deals.
 
     ``profile`` keys: budget, people, cuisines (list), restriction (str|None),
-    merchant. ``deals`` are cleaned item rows for the chosen store.
+    pantry (list), merchant. ``deals`` are cleaned item rows for the chosen
+    store (already pantry-filtered by the caller).
     """
     cuisines = profile.get("cuisines") or []
     cuisines_text = ", ".join(cuisines) if cuisines else "None specified"
     restriction = profile.get("restriction") or "No restriction"
+    pantry = profile.get("pantry") or []
+    pantry_text = ", ".join(pantry) if pantry else "Nothing — assume an empty kitchen"
 
     deal_lines = [
         f"{d.get('clean_name', '')} | ${_fmt(d.get('price'))} | "
@@ -117,6 +128,7 @@ def generate_budget_plan(profile: dict, deals: list[dict]) -> dict:
         people=profile.get("people", 1),
         cuisines=cuisines_text,
         restriction=restriction,
+        pantry=pantry_text,
         merchant=profile.get("merchant", "the store"),
         deals="\n".join(deal_lines),
     )

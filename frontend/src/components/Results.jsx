@@ -75,6 +75,7 @@ export default function Results({ profile, onBack }) {
             people: profile.people,
             cuisines: profile.cuisines,
             restriction: profile.restriction,
+            pantry: profile.pantry,
           }),
           api.getDeals(profile.postal, top.merchant),
         ]);

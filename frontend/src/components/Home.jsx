@@ -28,6 +28,23 @@ const RESTRICTIONS = [
   "Gluten-free",
 ];
 
+// Common staples people usually already have. Tapping one marks it as
+// "already at home" so we never spend budget re-buying it.
+const PANTRY_STAPLES = [
+  "Rice",
+  "Pasta",
+  "Eggs",
+  "Milk",
+  "Bread",
+  "Onions",
+  "Garlic",
+  "Cooking oil",
+  "Flour",
+  "Sugar",
+  "Butter",
+  "Soy sauce",
+];
+
 const MAX_CUISINES = 3;
 
 export default function Home({ onFindDeals }) {
@@ -36,6 +53,8 @@ export default function Home({ onFindDeals }) {
   const [people, setPeople] = useState("1");
   const [cuisines, setCuisines] = useState([]);
   const [restriction, setRestriction] = useState("No restriction");
+  const [pantry, setPantry] = useState([]);
+  const [pantryExtra, setPantryExtra] = useState("");
   const [error, setError] = useState("");
 
   function toggleCuisine(c) {
@@ -43,6 +62,28 @@ export default function Home({ onFindDeals }) {
       if (prev.includes(c)) return prev.filter((x) => x !== c);
       if (prev.length >= MAX_CUISINES) return prev; // cap at 3
       return [...prev, c];
+    });
+  }
+
+  function togglePantry(p) {
+    setPantry((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    );
+  }
+
+  // Selected staples + anything typed in the free-text box.
+  function collectPantry() {
+    const typed = pantryExtra
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // De-duplicate case-insensitively, keeping first spelling seen.
+    const seen = new Set();
+    return [...pantry, ...typed].filter((x) => {
+      const k = x.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
     });
   }
 
@@ -57,6 +98,7 @@ export default function Home({ onFindDeals }) {
       people: Number(people === "4+" ? 4 : people),
       cuisines,
       restriction: restriction === "No restriction" ? null : restriction,
+      pantry: collectPantry(),
     });
   }
 
@@ -87,8 +129,9 @@ export default function Home({ onFindDeals }) {
           <br className="hidden sm:block" /> leave with a plan
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted">
-          Tell us five things. We'll show you exactly what to buy this week and
-          what you're eating — built around real deals at the store nearest you.
+          Tell us your budget and what's already in your kitchen. We'll show you
+          exactly what to buy this week and what you're eating — built around
+          real deals at the store nearest you.
         </p>
       </motion.header>
 
@@ -228,6 +271,38 @@ export default function Home({ onFindDeals }) {
               </motion.button>
             ))}
           </div>
+        </div>
+
+        {/* 6. Already at home — never buy these twice */}
+        <div>
+          <label className="mb-1 block text-sm font-bold text-ink">
+            Already have at home?{" "}
+            <span className="font-medium text-muted">(optional)</span>
+          </label>
+          <p className="mb-2 text-xs text-muted">
+            Tap what's already in your kitchen — we'll leave it out of your
+            basket so your budget goes to what you actually need.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {PANTRY_STAPLES.map((p) => (
+              <motion.button
+                key={p}
+                type="button"
+                whileTap={press}
+                aria-pressed={pantry.includes(p)}
+                onClick={() => togglePantry(p)}
+                className={`chip ${pantry.includes(p) ? "chip-on" : "chip-off"}`}
+              >
+                {p}
+              </motion.button>
+            ))}
+          </div>
+          <input
+            className="input mt-3 py-2.5 text-sm"
+            placeholder="Anything else? e.g. chickpeas, frozen peas"
+            value={pantryExtra}
+            onChange={(e) => setPantryExtra(e.target.value)}
+          />
         </div>
 
         {error && (
