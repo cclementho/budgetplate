@@ -22,6 +22,8 @@ export default function BudgetShop({ result, budget }) {
   const total = result?.estimated_total ?? plan?.estimated_total;
   const underBudget = result?.under_budget;
   const swap = plan?.swap_suggestion;
+  // Deals left out because the shopper said they already have them.
+  const skippedPantry = result?.skipped_pantry_items || [];
 
   if (!plan || basket.length === 0) {
     return (
@@ -152,6 +154,19 @@ export default function BudgetShop({ result, budget }) {
               <>Over budget by {money(total - budget)}</>
             )}
           </p>
+
+          {/* Confirm what we left out because it's already at home */}
+          {skippedPantry.length > 0 && (
+            <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
+              <span className="font-semibold text-ink">
+                Skipped {skippedPantry.length}{" "}
+                {skippedPantry.length === 1 ? "deal" : "deals"}
+              </span>{" "}
+              you already have at home: {skippedPantry.slice(0, 4).join(", ")}
+              {skippedPantry.length > 4 &&
+                ` +${skippedPantry.length - 4} more`}
+            </p>
+          )}
 
           {/* Swap suggestion when over budget */}
           {!underBudget && swap && (
