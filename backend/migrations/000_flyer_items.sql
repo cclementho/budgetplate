@@ -1,6 +1,7 @@
--- BudgetPlate database schema (PostgreSQL).
--- Local-first, but the structure is Supabase-ready: a single flat table keyed
--- by postal_code with a scraped_at timestamp powers both caching and search.
+-- 000: the original BudgetPlate schema (formerly backend/schema.sql).
+-- A single flat table keyed by postal_code. Kept as the first migration so a
+-- fresh database replays the same history as an existing one; 002 later
+-- renames this table to flyer_items_legacy and replaces it with a view.
 
 CREATE TABLE IF NOT EXISTS flyer_items (
     id SERIAL PRIMARY KEY,
