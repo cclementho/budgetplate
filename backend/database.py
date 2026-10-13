@@ -5,7 +5,6 @@ makes the same code work against a local Postgres or a hosted Supabase instance
 (just change ``DATABASE_URL``).
 """
 
-import os
 from contextlib import contextmanager
 
 import psycopg2
@@ -53,9 +52,8 @@ def get_cursor(commit: bool = False):
 
 
 def init_db() -> None:
-    """Apply schema.sql so the app works on a fresh database."""
-    schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
-    with open(schema_path, "r") as f:
-        schema_sql = f.read()
-    with get_cursor(commit=True) as cur:
-        cur.execute(schema_sql)
+    """Apply any pending migrations so the app works on a fresh database."""
+    # Imported here because migrate.py imports this module.
+    from migrate import apply_all
+
+    apply_all()
