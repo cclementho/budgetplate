@@ -20,9 +20,8 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from activity import active_postal_codes
 from config import settings
-from scraper.pipeline import run_pipeline
+from weekly_refresh import refresh
 
 logger = logging.getLogger("budgetplate.scheduler")
 
@@ -34,18 +33,6 @@ _scheduler: BackgroundScheduler | None = None
 def weekly_trigger() -> CronTrigger:
     """Thursday 06:00 in Toronto, through both EDT and EST."""
     return CronTrigger(day_of_week="thu", hour=6, minute=0, timezone=TORONTO)
-
-
-def refresh_recent_postal_codes() -> None:
-    """Force-refresh every postal code requested in the last 30 days."""
-    codes = active_postal_codes(days=30)
-    logger.info("Weekly refresh: %d postal codes to update", len(codes))
-    for code in codes:
-        try:
-            result = run_pipeline(code, force=True, triggered_by="scheduled")
-            logger.info("Refreshed %s: %s", code, result.get("status"))
-        except Exception as exc:  # keep going if one postal code fails
-            logger.exception("Refresh failed for %s: %s", code, exc)
 
 
 def start_scheduler() -> BackgroundScheduler | None:
@@ -60,8 +47,9 @@ def start_scheduler() -> BackgroundScheduler | None:
 
     _scheduler = BackgroundScheduler(timezone=TORONTO)
     _scheduler.add_job(
-        refresh_recent_postal_codes,
+        refresh,  # same code path as the GitHub Actions job
         weekly_trigger(),
+        kwargs={"triggered_by": "scheduled"},
         id="weekly_flyer_refresh",
         replace_existing=True,
     )
