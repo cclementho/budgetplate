@@ -41,3 +41,20 @@ def scalar(conn, sql, params=None):
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
+
+
+# For API-facing tests: a flyer week that is current whenever the suite runs,
+# with a validity window comfortably in the future (queries.py hides expired
+# deals by comparing against the real clock).
+def _this_week():
+    from scraper.warehouse import flyer_week_start  # local import keeps helpers light
+    return flyer_week_start(dt.date.today())
+
+
+THIS_WEEK = _this_week()
+LAST_MONTH_WEEK = THIS_WEEK - dt.timedelta(weeks=4)
+
+
+def current_row(name, price, *, merchant="No Frills"):
+    return raw_row(name, price, merchant=merchant, week=THIS_WEEK,
+                   valid_to=f"{dt.date.today() + dt.timedelta(days=30)}T23:59:59-04:00")
