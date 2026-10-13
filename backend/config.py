@@ -26,6 +26,13 @@ class Settings:
     # Cache window: re-use scraped data younger than this many hours.
     CACHE_HOURS: int = 24
 
+    # Run the in-process weekly refresh (APScheduler). For local dev only:
+    # in prod the GitHub Actions workflow is the source of truth, so this
+    # defaults to off and render.yaml keeps it off.
+    ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
     # Stores the Flipp scraper supports.
     SUPPORTED_MERCHANTS = ["No Frills", "FreshCo", "Walmart", "Loblaws"]
 
