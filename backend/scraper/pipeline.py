@@ -11,8 +11,6 @@ scrape completes in seconds (network time only). Claude is only called later,
 in /api/budget-plan, when building a user's weekly basket.
 """
 
-from datetime import datetime, timedelta
-
 import progress
 from config import settings
 from database import get_cursor
@@ -114,14 +112,3 @@ def run_pipeline(
         "dq_failed_checks": batch["dq_failed_checks"],
     }
 
-
-def recent_postal_codes(days: int = 30) -> list[str]:
-    """Postal codes searched within the last ``days`` (for the refresh job)."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT DISTINCT postal_code FROM flyer_items WHERE scraped_at >= %s",
-            (cutoff,),
-        )
-        rows = cur.fetchall()
-    return [r["postal_code"] for r in rows]

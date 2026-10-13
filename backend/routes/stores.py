@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query
 
+from activity import record_request
 from jobs import start_background_scrape
 from location.stores import find_stores
 from queries import get_deal_counts
@@ -27,6 +28,9 @@ def stores(
     — this keeps the "Find Deals" flow from blocking for 30-60s.
     """
     postal_code = postal_code.replace(" ", "").upper()
+    # Every results page starts here, so this is where demand is counted; the
+    # weekly refresh only scrapes postal codes people actually request.
+    record_request(postal_code)
 
     if not has_fresh_data(postal_code):
         start_background_scrape(postal_code)

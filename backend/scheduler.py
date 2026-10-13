@@ -10,7 +10,8 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from scraper.pipeline import recent_postal_codes, run_pipeline
+from activity import active_postal_codes
+from scraper.pipeline import run_pipeline
 
 logger = logging.getLogger("budgetplate.scheduler")
 
@@ -18,12 +19,12 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def refresh_recent_postal_codes() -> None:
-    """Force-refresh every postal code searched in the last 30 days."""
-    codes = recent_postal_codes(days=30)
+    """Force-refresh every postal code requested in the last 30 days."""
+    codes = active_postal_codes(days=30)
     logger.info("Weekly refresh: %d postal codes to update", len(codes))
     for code in codes:
         try:
-            result = run_pipeline(code, force=True)
+            result = run_pipeline(code, force=True, triggered_by="scheduled")
             logger.info("Refreshed %s: %s", code, result.get("status"))
         except Exception as exc:  # keep going if one postal code fails
             logger.exception("Refresh failed for %s: %s", code, exc)
