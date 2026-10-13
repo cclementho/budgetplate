@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 import psycopg2.extras
 
 from database import get_conn
+from scraper import dq
 
 logger = logging.getLogger("budgetplate.warehouse")
 
@@ -446,6 +447,9 @@ def load_batch(
                         "invalid_window_count": counts["invalid_window"],
                         "category_counts": dict(Counter(f["row"].category for f in facts)),
                         "chain_counts": dict(Counter(f["row"].chain for f in facts)),
+                        "week_counts": {
+                            str(w): n for w, n in Counter(f["row"].flyer_week for f in facts).items()
+                        },
                         "min_flyer_week": min(weeks) if weeks else None,
                         "max_flyer_week": max(weeks) if weeks else None,
                     }
@@ -464,6 +468,7 @@ def load_batch(
                             invalid_window_count = %(invalid_window_count)s,
                             category_counts = %(category_counts_json)s,
                             chain_counts = %(chain_counts_json)s,
+                            week_counts = %(week_counts_json)s,
                             min_flyer_week = %(min_flyer_week)s,
                             max_flyer_week = %(max_flyer_week)s
                         WHERE batch_id = %(batch_id)s
@@ -472,6 +477,7 @@ def load_batch(
                             **stats,
                             "category_counts_json": json.dumps(stats["category_counts"]),
                             "chain_counts_json": json.dumps(stats["chain_counts"]),
+                            "week_counts_json": json.dumps(stats["week_counts"]),
                             "batch_id": batch_id,
                         },
                     )
@@ -487,10 +493,17 @@ def load_batch(
         "Batch %s (%s): %s facts (%s new, %s refreshed) from %s usable rows",
         batch_id, postal_code, stats["loaded_row_count"], inserted, updated, len(usable),
     )
+
+    # Data-quality checks run after the data is committed: a failing check is
+    # a warning about the batch, never a reason to throw the batch away.
+    checks = dq.run_checks(batch_id)
+    failed = [c.check_name for c in checks if not c.passed]
+
     return {
         "batch_id": batch_id,
         "postal_code": postal_code,
-        "status": "success",
+        "status": "success_with_warnings" if failed else "success",
+        "dq_failed_checks": failed,
         "raw_row_count": raw_count,
         "priced_row_count": len(parsed_rows),
         **stats,

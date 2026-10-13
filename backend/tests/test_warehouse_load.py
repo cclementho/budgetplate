@@ -39,7 +39,10 @@ def test_load_writes_batch_dimensions_and_facts(db):
 
     assert summary["loaded_row_count"] == 3
     batch = query(db, "SELECT * FROM etl_batch")[0]
-    assert batch["status"] == "success"
+    # Loaded and closed. (DQ also warns here, since 1 of 4 scraped rows had no
+    # price, which is 25% against a 20% threshold; test_dq.py covers that.)
+    assert batch["status"] in ("success", "success_with_warnings")
+    assert batch["finished_at"] is not None
     assert batch["raw_row_count"] == 4 and batch["priced_row_count"] == 3
     assert batch["min_flyer_week"] == batch["max_flyer_week"] == WEEK_1
     assert scalar(db, "SELECT count(*) FROM dim_store") == 1
