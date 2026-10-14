@@ -1,4 +1,6 @@
-# Render blueprint for the BudgetPlate backend + database.
+# Render blueprint for the BudgetPlate backend. The database is Supabase,
+# not a Render database: Render's free Postgres is deleted after 30 days,
+# which would wipe the price history.
 # Deploy with: Render dashboard → New → Blueprint → point at this repo.
 services:
   - type: web
@@ -17,11 +19,7 @@ services:
       # after 15 idle minutes, so an in-process scheduler can't be trusted.
       - key: ENABLE_SCHEDULER
         value: "false"
+      # Supabase session pooler URL (port 5432, ?sslmode=require); set in the
+      # Render dashboard. Same value as the GitHub Actions DATABASE_URL secret.
       - key: DATABASE_URL
-        fromDatabase:
-          name: budgetplate-db
-          property: connectionString
-
-databases:
-  - name: budgetplate-db
-    plan: free
+        sync: false

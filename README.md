@@ -19,11 +19,11 @@ BudgetPlate pulls real weekly flyer deals from major Canadian grocery chains, pa
 | Backend      | FastAPI (Python)                                              |
 | Frontend     | React + Tailwind CSS + Recharts                              |
 | AI           | Anthropic Claude Haiku (`anthropic` Python SDK)              |
-| Database     | PostgreSQL 15+ (local, or Supabase): app tables + a star-schema price-history warehouse |
+| Database     | PostgreSQL 15+ (Supabase in prod, local for dev): app tables + a star-schema price-history warehouse |
 | Scheduling   | GitHub Actions (prod, weekly) · APScheduler (local dev only) |
 | Location     | OpenStreetMap — Nominatim geocoding + Overpass (no API key)  |
 | Data source  | [Flipp scraper](https://github.com/Kiizon/flippscrape) (integrated) |
-| Deployment   | Render (backend) + Vercel (frontend)                         |
+| Deployment   | Render (backend) + Supabase (database) + Vercel (frontend)   |
 
 ---
 
@@ -470,46 +470,45 @@ Fixed overhead is about 2 MB (`dim_date` 0.6 MB, `flyer_items_legacy` 1.1 MB), a
 
 ## Deployment
 
-> [!WARNING]
-> **Render's free Postgres expires, and with it all price history.** A free Render database is deleted 30 days after creation (plus a 14-day grace period), has no backups and is capped at 1 GB. That's acceptable for a cache that is rebuilt every week, but not for a warehouse whose whole value is accumulated history. **Move production to Supabase's free tier before relying on the warehouse** (steps below). `render.yaml` still provisions a Render database so the existing deploy keeps working until the move.
+Production runs on three free tiers:
+
+- **Render** runs the FastAPI backend.
+- **Supabase** hosts Postgres.
+- **Vercel** serves the frontend.
+
+GitHub Actions runs the weekly refresh. The backend and the Actions job connect to the same Supabase database through one `DATABASE_URL`.
+
+### Database → Supabase
+
+The database is **not** on Render. Render's free Postgres is deleted 30 days after creation (plus a 14-day grace period), has no backups and is capped at 1 GB. That would wipe the price history, the whole point of the warehouse. Supabase's free tier gives 500 MB and doesn't expire; see [Storage growth](#storage-growth) for how long that lasts.
+
+- **Use the session pooler connection string:** Connect → *Session pooler*, port **5432**, user `postgres.<project-ref>`, with `?sslmode=require` appended.
+  - Not the *direct* connection: it is IPv6-only, and neither Render nor GitHub-hosted runners can reach it.
+  - Not the *transaction* pooler (port 6543): it drops session state between transactions.
+- **Migrations** apply automatically when the backend starts. To apply them by hand (e.g. to watch the output), run `DATABASE_URL="<session pooler URL>" python migrate.py` from `backend/`.
+- **The Data API is closed** by migration 005; see [Locking down Supabase's Data API](#locking-down-supabases-data-api).
+- **Inactivity pausing:** a free project pauses after about a week without activity. The weekly refresh should count as activity, but check the dashboard after the first quiet week.
 
 ### Backend → Render
 
-The included `render.yaml` provisions the web service (and, for now, a free Postgres database). In the Render dashboard:
+`render.yaml` defines the web service only. In the Render dashboard:
 
 1. New → Blueprint → select this repo.
-2. Set the `ANTHROPIC_API_KEY` secret.
-3. Deploy. Migrations in `backend/migrations/` apply on startup.
+2. Set the secrets: `ANTHROPIC_API_KEY`, and `DATABASE_URL` (the Supabase session pooler URL). Both are `sync: false`, so they are entered in the dashboard and never stored in git.
+3. Deploy. Pending migrations apply on startup.
 
 The free web service sleeps after 15 idle minutes, so the weekly refresh runs in GitHub Actions, not inside the app (see [Scheduling](#scheduling)).
+
+### Weekly refresh → GitHub Actions
+
+1. Repo → Settings → Secrets and variables → Actions → add `DATABASE_URL`, the same session pooler URL.
+2. Actions → *Weekly flyer refresh* → *Run workflow*, with the postal codes you want, to check that it runs. After that it runs every Thursday at 06:00 Toronto.
 
 ### Frontend → Vercel
 
 1. Import the repo into Vercel, set the project root to `frontend/`.
 2. Set `VITE_API_BASE` to your Render backend URL (e.g. `https://budgetplate-api.onrender.com`).
 3. Deploy. `frontend/vercel.json` configures the Vite build.
-
-### Moving the database to Supabase
-
-1. **Create a Supabase project** (free tier: 500 MB, does not expire; it pauses after about a week without activity; the weekly refresh should count as activity, but check the dashboard after the first quiet week).
-2. **Copy the session pooler connection string:** Project → Connect → *Session pooler* (port **5432**, user `postgres.<project-ref>`), and append `?sslmode=require`.
-   - Not the *direct* connection: it is IPv6-only, and neither Render nor GitHub-hosted runners reach it.
-   - Not the *transaction* pooler (port 6543): it doesn't keep session state, which the migration lock relies on.
-3. **Optional, if the Render database still exists:** copy the old flyer rows so the backfill has history to load.
-   ```bash
-   pg_dump "$RENDER_DATABASE_URL" --table=flyer_items --no-owner --no-acl > flyer_items.sql
-   psql "$SUPABASE_DATABASE_URL" -f flyer_items.sql
-   ```
-4. **Create the schema and backfill:**
-   ```bash
-   cd backend
-   DATABASE_URL="$SUPABASE_DATABASE_URL" python migrate.py
-   DATABASE_URL="$SUPABASE_DATABASE_URL" python backfill.py
-   ```
-5. **Point Render at Supabase:** in `render.yaml`, replace the `DATABASE_URL` `fromDatabase` block with `sync: false` and delete the `databases:` section, then set `DATABASE_URL` in the Render dashboard. (Do this in the same deploy as the dashboard change; merging it before Supabase exists would leave the API without a database.)
-6. **Add the GitHub secret:** repo → Settings → Secrets and variables → Actions → `DATABASE_URL` = the same session pooler string.
-7. **Run the workflow once by hand** (Actions → *Weekly flyer refresh* → *Run workflow*) and check the summary.
-8. Delete the Render database once the app reads from Supabase.
 
 ---
 
