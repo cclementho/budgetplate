@@ -263,6 +263,9 @@ def parse_item(raw: dict) -> dict:
         "price_per_kg": price_per_kg,
         "price_per_unit": price_per_unit,
         "weight_kg": weight_kg,
+        "pack_count": count,  # e.g. 12 for "12 pack" / "12's"
+        "size_unit": unit,  # unit as printed: g, kg, ml, l, lb, lbs
+        "flyer_id": raw.get("flyer_id"),
         "valid_from": raw.get("valid_from") or None,
         "valid_to": raw.get("valid_to") or None,
     }

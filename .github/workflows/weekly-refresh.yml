@@ -1,0 +1,62 @@
+# Weekly flyer refresh: scrape -> load into the price-history warehouse -> DQ checks,
+# for every postal code requested in the last 30 days.
+#
+# This is the production source of truth for refreshes. The Render web service
+# sleeps after 15 idle minutes, so an in-process scheduler there can't be relied on.
+#
+# Requires one repository secret: DATABASE_URL, the Supabase *session pooler*
+# connection string (port 5432). Supabase's direct connection is IPv6-only and
+# GitHub-hosted runners are IPv4, so the direct URL won't connect from here.
+
+name: Weekly flyer refresh
+
+on:
+  schedule:
+    # GitHub cron is UTC-only. 06:00 Toronto = 10:00 UTC under EDT (Mar-Nov)
+    # and 11:00 UTC under EST (Nov-Mar). Both crons fire every Thursday;
+    # weekly_refresh.py lets through only the one that is 06:00 Toronto that
+    # day, and the other exits as a no-op.
+    - cron: "0 10 * * 4"
+    - cron: "0 11 * * 4"
+  workflow_dispatch:
+    inputs:
+      postal_codes:
+        description: "Comma-separated postal codes to refresh (blank = all active)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Never run two refreshes at once; queue instead of cancelling a running load.
+concurrency:
+  group: weekly-flyer-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: backend/.python-version
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape, load and run data-quality checks
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SCHEDULE: ${{ github.event.schedule }}
+          POSTAL_CODES: ${{ inputs.postal_codes }}
+        run: python weekly_refresh.py
