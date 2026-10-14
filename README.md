@@ -36,7 +36,7 @@ budgetplate/
 │   ├── config.py              # env-driven settings
 │   ├── database.py            # psycopg2 pool; init_db() applies migrations
 │   ├── migrate.py             # tiny migration runner (schema_migrations table)
-│   ├── migrations/            # 000 legacy table · 001 star schema · 002-004
+│   ├── migrations/            # 000 legacy table · 001 star schema · 002-005
 │   ├── queries.py             # shared DB reads (API reads the flyer_items view)
 │   ├── activity.py            # which postal codes people actually request
 │   ├── backfill.py            # one-off: legacy flyer_items -> first warehouse batches
@@ -188,6 +188,7 @@ A weekly refresh re-runs the pipeline every **Thursday at 06:00 Toronto time** (
 - The **Anthropic API key lives only on the backend** — the frontend calls FastAPI, never Anthropic directly.
 - `.env` is git-ignored; `.env.example` documents the required variables.
 - A per-IP **rate limiter** caps requests at `RATE_LIMIT_PER_MINUTE`.
+- The database is closed to Supabase's auto-generated API; only the backend reads it. See [Locking down Supabase's Data API](#locking-down-supabases-data-api).
 
 ---
 
@@ -314,6 +315,34 @@ For each postal code, the view returns the rows from that postal code's **most r
 
 The 24h cache now reads `etl_batch` and only counts **scrape** batches that loaded rows. Neither a backfill nor an empty Flipp response stops the app from scraping the current flyer.
 
+### Locking down Supabase's Data API
+
+Supabase publishes every table and view in the `public` schema as a REST API (PostgREST). Anyone holding the project's **anon key** can call it, and that key is designed to be public, embedded in frontends. BudgetPlate never uses this API: the browser talks to FastAPI, and FastAPI connects with `DATABASE_URL` as the role that **owns** the tables. Supabase's security advisor flagged the gap (`public.flyer_items`: RLS not enabled), so migration `005_lock_down_data_api.sql` closes the API in three layers. Any one of them blocks it on its own.
+
+| Layer | What it does | Why the backend is unaffected |
+|---|---|---|
+| **RLS on every table, with no policies** | Any role that isn't the owner sees **zero rows** | Table owners bypass RLS, and it is deliberately not `FORCE`d |
+| **`flyer_items` view with `security_invoker = true`** | The view checks the *caller's* rights and RLS | The backend owns the base tables either way |
+| **Revoke `anon` and `authenticated`**, for existing tables, views and sequences, and through default privileges for tables created later | API requests fail with `permission denied` before RLS is consulted | The owner's own privileges are untouched |
+
+Why the view layer matters: a Postgres view normally runs with its **owner's** privileges. Without `security_invoker`, an `anon` request to `/rest/v1/flyer_items` would read the tables *as the owner*, and RLS on those tables would never apply.
+
+On local Postgres the `anon` and `authenticated` roles don't exist, so the revoke step is skipped and the migration only enables RLS and sets the view option.
+
+`tests/test_data_api_lockdown.py` recreates Supabase's setup inside the test database: `anon` and `authenticated` with the grants a new project gives them, plus a **non-superuser** table owner standing in for Supabase's `postgres` role. Testing as the local superuser would prove nothing, because superusers skip RLS. The tests check four things:
+
+- the backend's own connection pool, running as that owner, still loads batches and reads `flyer_items` through `queries.py`;
+- both API roles are denied every table and the view;
+- if `SELECT` is granted again by mistake, RLS still returns zero rows, and switching `security_invoker` off would leak them;
+- a table created later isn't exposed.
+
+Limits of this layer:
+
+- **Every new table needs `ENABLE ROW LEVEL SECURITY` in its migration.** A test fails if any table in `public` lacks it.
+- **Default privileges only cover objects created by the role that ran the migration** (`postgres`). Tables created in the Supabase dashboard as another role would need the same treatment.
+- **`service_role` keeps full access by design** (it bypasses RLS). Its key must never leave the server; BudgetPlate doesn't use it.
+- **An "RLS enabled, no policy" notice in the security advisor is expected.** That is the intended state. For extra assurance you can also turn off the Data API, or stop exposing `public`, under Project Settings → Data API.
+
 ### Data-quality checks (`scraper/dq.py`)
 
 Seven checks run after every load. Each writes a row to `dq_check_results`. Each check is a pure function of two batch snapshots (this batch and the previous one for the same postal code), so they're unit-tested without a database.
@@ -393,7 +422,7 @@ psql budgetplate -f analytics/queries.sql
 # tests: a disposable database whose name must contain "test"
 createdb budgetplate_test
 pip install -r requirements-dev.txt
-pytest                             # 80 tests
+pytest                             # 87 tests
 ```
 
 ### Backfill
