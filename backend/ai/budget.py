@@ -104,8 +104,13 @@ def _fmt(value) -> str:
     return "n/a" if value is None else f"{float(value):.2f}"
 
 
-def generate_budget_plan(profile: dict, deals: list[dict]) -> dict:
-    """Generate the weekly basket JSON from a profile and the store's deals.
+# Output cap for the plan. Shared with scripts/compare_budget_models.py so the
+# comparison sends exactly what production sends.
+MAX_TOKENS = 16_000
+
+
+def build_budget_prompt(profile: dict, deals: list[dict]) -> str:
+    """Render the user prompt for a profile and the store's deals.
 
     ``profile`` keys: budget, people, cuisines (list), restriction (str|None),
     pantry (list), merchant. ``deals`` are cleaned item rows for the chosen
@@ -123,7 +128,7 @@ def generate_budget_plan(profile: dict, deals: list[dict]) -> dict:
         for d in deals
     ]
 
-    prompt = PROMPT_TEMPLATE.format(
+    return PROMPT_TEMPLATE.format(
         budget=float(profile.get("budget", 60)),
         people=profile.get("people", 1),
         cuisines=cuisines_text,
@@ -133,4 +138,12 @@ def generate_budget_plan(profile: dict, deals: list[dict]) -> dict:
         deals="\n".join(deal_lines),
     )
 
-    return call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=4096)
+
+def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None) -> dict:
+    """Generate the weekly basket JSON from a profile and the store's deals.
+
+    ``model`` overrides the configured Claude model (``settings.CLAUDE_MODEL``)
+    for this call only; leave it unset in production.
+    """
+    prompt = build_budget_prompt(profile, deals)
+    return call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)

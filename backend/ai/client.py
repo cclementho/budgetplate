@@ -6,13 +6,29 @@ consistent.
 """
 
 import json
+import logging
 import re
 
 import anthropic
 
 from config import settings
 
+logger = logging.getLogger("budgetplate.ai")
+
 _client: anthropic.Anthropic | None = None
+
+
+class ClaudeResponseError(Exception):
+    """Claude replied, but the reply can't be used.
+
+    ``reason`` is one of ``max_tokens`` (cut off), ``refusal``, ``empty`` (no
+    text) or ``invalid_json``. Details are logged here; callers turn this into
+    a friendly message instead of a 500.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def get_client() -> anthropic.Anthropic:
@@ -57,11 +73,16 @@ def call_claude_json(
     *,
     system: str | None = None,
     max_tokens: int = 4096,
+    model: str | None = None,
 ):
-    """Call Claude Haiku and return parsed JSON from the response text."""
+    """Call Claude Haiku and return parsed JSON from the response text.
+
+    ``model`` overrides ``settings.CLAUDE_MODEL`` for one call (used by the
+    model-comparison script); production callers leave it unset.
+    """
     client = get_client()
     kwargs = {
-        "model": settings.CLAUDE_MODEL,
+        "model": model or settings.CLAUDE_MODEL,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -69,5 +90,26 @@ def call_claude_json(
         kwargs["system"] = system
 
     response = client.messages.create(**kwargs)
+    # Read text blocks only: newer models (e.g. Haiku 5.5) put thinking blocks first.
     text = "".join(block.text for block in response.content if block.type == "text")
-    return _extract_json(text)
+
+    usage = getattr(response, "usage", None)
+    context = (
+        f"model={kwargs['model']} stop_reason={response.stop_reason} max_tokens={max_tokens} "
+        f"input_tokens={getattr(usage, 'input_tokens', None)} "
+        f"output_tokens={getattr(usage, 'output_tokens', None)} text_chars={len(text)}"
+    )
+    if response.stop_reason == "max_tokens":
+        logger.error("Claude response was cut off at max_tokens (thinking counts toward it): %s", context)
+        raise ClaudeResponseError("max_tokens")
+    if response.stop_reason == "refusal":
+        logger.error("Claude declined the request: %s", context)
+        raise ClaudeResponseError("refusal")
+    if not text.strip():
+        logger.error("Claude returned no text: %s", context)
+        raise ClaudeResponseError("empty")
+    try:
+        return _extract_json(text)
+    except ValueError:  # includes json.JSONDecodeError
+        logger.error("Claude returned text that is not valid JSON: %s", context)
+        raise ClaudeResponseError("invalid_json") from None

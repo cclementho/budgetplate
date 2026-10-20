@@ -21,7 +21,7 @@ class Settings:
 
     # Claude Haiku is only called for /api/budget-plan (weekly basket + meal
     # ideas). Scraping/parsing is pure Python — no AI involved.
-    CLAUDE_MODEL: str = "claude-haiku-4-5"
+    CLAUDE_MODEL: str = "claude-haiku-5-5"
 
     # Cache window: re-use scraped data younger than this many hours.
     CACHE_HOURS: int = 24
