@@ -2,6 +2,8 @@
 
 **Find the cheapest groceries near you this week — built for Canadian students and budget shoppers without a car.**
 
+**Live:** [budgetplate-pearl.vercel.app](https://budgetplate-pearl.vercel.app) · API: [budgetplate.onrender.com/api/health](https://budgetplate.onrender.com/api/health) (free tier: the first request after 15 idle minutes takes about 30 seconds while the backend wakes up)
+
 BudgetPlate pulls real weekly flyer deals from major Canadian grocery chains, parses them into comparable unit prices, and ranks them by **price per kg _and_ distance**. Every weekly scrape is also kept in a small **price-history warehouse** (star schema, idempotent loads, data-quality checks) — see [Price-history warehouse](#price-history-warehouse). The cheapest store 45 minutes away loses to a slightly pricier one 10 minutes on foot.
 
 **One entry point:** enter your postal code, weekly budget, and household size. BudgetPlate finds the best-value store near you and builds a results page around what's actually on sale this week:
@@ -507,7 +509,7 @@ The free web service sleeps after 15 idle minutes, so the weekly refresh runs in
 ### Frontend → Vercel
 
 1. Import the repo into Vercel, set the project root to `frontend/`.
-2. Set `VITE_API_BASE` to your Render backend URL (e.g. `https://budgetplate-api.onrender.com`).
+2. Set `VITE_API_BASE` to your Render backend URL. Production uses `https://budgetplate.onrender.com`; Vite bakes it into the build, so redeploy after changing it.
 3. Deploy. `frontend/vercel.json` configures the Vite build.
 
 ---
