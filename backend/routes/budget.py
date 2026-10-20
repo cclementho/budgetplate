@@ -2,14 +2,21 @@
 
 import re
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan
+from ai.client import ClaudeResponseError
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
 
 router = APIRouter()
+
+# Shown to the shopper (the frontend displays the response's "detail") when
+# Claude's reply is cut off, empty, refused or not valid JSON.
+PLAN_FAILED_MESSAGE = (
+    "We couldn't finish your meal plan this time. Please try again in a moment."
+)
 
 
 class BudgetProfile(BaseModel):
@@ -118,17 +125,21 @@ def budget_plan(profile: BudgetProfile) -> dict:
         deals, profile.restriction, profile.pantry
     )
 
-    plan = generate_budget_plan(
-        {
-            "budget": profile.budget,
-            "people": profile.people,
-            "cuisines": profile.cuisines,
-            "restriction": profile.restriction,
-            "pantry": profile.pantry,
-            "merchant": profile.merchant,
-        },
-        filtered,
-    )
+    try:
+        plan = generate_budget_plan(
+            {
+                "budget": profile.budget,
+                "people": profile.people,
+                "cuisines": profile.cuisines,
+                "restriction": profile.restriction,
+                "pantry": profile.pantry,
+                "merchant": profile.merchant,
+            },
+            filtered,
+        )
+    except ClaudeResponseError:
+        # Already logged with stop_reason and token counts in ai.client.
+        raise HTTPException(status_code=502, detail=PLAN_FAILED_MESSAGE)
 
     # Recompute the total from the basket subtotals so the budget verdict is
     # correct even if the model's arithmetic drifts.

@@ -1,0 +1,41 @@
+case_id,arm,model,max_tokens,effort,merchant,budget,people,restriction,pantry,deals_in_prompt,input_tokens,output_tokens,cost_usd,latency_s,stop_reason,thinking_blocks,parsed_json,valid_output,basket_items,meals,basket_total,violations,review_flags,error,v_item_not_on_flyer,v_price_not_on_flyer,v_meal_ingredient_not_in_basket,v_pantry_item_in_basket,v_over_budget,v_non_food_item,v_not_vegetarian,v_contains_dairy
+case01,haiku-4.5,claude-haiku-4-5,4096,default,No Frills,40,1,none,,54,2858,1558,0.010648,13.55,end_turn,0,True,True,12,4,39.19,0,1,,0,0,0,0,0,0,0,0
+case01,haiku-5.5,claude-haiku-5-5,4096,default,No Frills,40,1,none,,54,3754,4096,0.002423,16.97,max_tokens,1,False,False,,,,,,,,,,,,,,
+case02,haiku-5.5,claude-haiku-5-5,4096,default,No Frills,75,2,Vegetarian,Rice; Bread; Cooking oil,43,3302,4096,0.002378,17.46,max_tokens,1,False,False,,,,,,,,,,,,,,
+case02,haiku-4.5,claude-haiku-4-5,4096,default,No Frills,75,2,Vegetarian,Rice; Bread; Cooking oil,43,2498,1585,0.010423,13.21,end_turn,0,True,True,13,4,44.81,0,12,,0,0,0,0,0,0,0,0
+case03,haiku-4.5,claude-haiku-4-5,4096,default,No Frills,120,4,No dairy,,54,2858,2074,0.013228,17.51,end_turn,0,True,True,17,4,90.13,0,2,,0,0,0,0,0,0,0,0
+case03,haiku-5.5,claude-haiku-5-5,4096,default,No Frills,120,4,No dairy,,54,3754,4096,0.002423,17.91,max_tokens,1,False,False,,,,,,,,,,,,,,
+case04,haiku-5.5,claude-haiku-5-5,4096,default,FreshCo,40,2,Vegetarian,,172,8888,4096,0.002937,15.94,max_tokens,1,False,False,,,,,,,,,,,,,,
+case04,haiku-4.5,claude-haiku-4-5,4096,default,FreshCo,40,2,Vegetarian,,172,6837,1624,0.014957,13.44,end_turn,0,True,True,12,4,29.55,0,14,,0,0,0,0,0,0,0,0
+case05,haiku-4.5,claude-haiku-4-5,4096,default,FreshCo,120,4,none,Rice; Eggs; Onions; Garlic,171,6781,2179,0.017676,18.37,end_turn,0,True,True,17,4,82.7,0,8,,0,0,0,0,0,0,0,0
+case05,haiku-5.5,claude-haiku-5-5,4096,default,FreshCo,120,4,none,Rice; Eggs; Onions; Garlic,171,8815,4096,0.002929,17.62,max_tokens,1,False,False,,,,,,,,,,,,,,
+case06,haiku-5.5,claude-haiku-5-5,4096,default,Walmart,75,1,No dairy,Pasta; Cooking oil,349,14964,3416,0.003204,13.07,end_turn,1,True,True,7,4,26.37,0,4,,0,0,0,0,0,0,0,0
+case06,haiku-4.5,claude-haiku-4-5,4096,default,Walmart,75,1,No dairy,Pasta; Cooking oil,349,11556,1582,0.019466,13.27,end_turn,0,True,True,12,4,47.53,0,1,,0,0,0,0,0,0,0,0
+case07,haiku-4.5,claude-haiku-4-5,4096,default,Walmart,120,4,Vegetarian,,338,11193,2081,0.021598,16.94,end_turn,0,True,True,18,4,81.28,0,3,,0,0,0,0,0,0,0,0
+case07,haiku-5.5,claude-haiku-5-5,4096,default,Walmart,120,4,Vegetarian,,338,14488,4096,0.003497,16.55,max_tokens,1,False,False,,,,,,,,,,,,,,
+case08,haiku-5.5,claude-haiku-5-5,4096,default,Walmart,40,2,none,,351,15037,3641,0.003324,14.32,end_turn,1,True,True,9,4,37.6,0,1,,0,0,0,0,0,0,0,0
+case08,haiku-4.5,claude-haiku-4-5,4096,default,Walmart,40,2,none,,351,11614,1220,0.017714,10.27,end_turn,0,True,True,9,4,37.08,0,1,,0,0,0,0,0,0,0,0
+case09,haiku-4.5,claude-haiku-4-5,4096,default,Loblaws,75,4,none,Eggs; Milk; Bread; Butter,223,7959,2634,0.021129,22.45,end_turn,0,True,True,18,6,60.72,1,11,,0,0,1,0,0,0,0,0
+case09,haiku-5.5,claude-haiku-5-5,4096,default,Loblaws,75,4,none,Eggs; Milk; Bread; Butter,223,10217,4096,0.00307,16.38,max_tokens,1,False,False,,,,,,,,,,,,,,
+case10,haiku-5.5,claude-haiku-5-5,4096,default,Loblaws,40,1,No dairy,,237,10872,3635,0.002905,14.31,end_turn,1,True,True,10,4,35.92,0,2,,0,0,0,0,0,0,0,0
+case10,haiku-4.5,claude-haiku-4-5,4096,default,Loblaws,40,1,No dairy,,237,8461,1632,0.016621,14.09,end_turn,0,True,True,13,4,35.24,0,3,,0,0,0,0,0,0,0,0
+case01,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,No Frills,40,1,none,,54,3754,3845,0.002298,15.42,end_turn,1,True,True,10,4,34.02,0,4,,0,0,0,0,0,0,0,0
+case01,haiku-5.5-16k,claude-haiku-5-5,16000,default,No Frills,40,1,none,,54,3754,4175,0.002463,16.78,end_turn,1,True,True,9,4,29.64,0,5,,0,0,0,0,0,0,0,0
+case02,haiku-5.5-16k,claude-haiku-5-5,16000,default,No Frills,75,2,Vegetarian,Rice; Bread; Cooking oil,43,3302,5167,0.002914,19.6,end_turn,1,True,True,13,4,47.27,0,10,,0,0,0,0,0,0,0,0
+case02,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,No Frills,75,2,Vegetarian,Rice; Bread; Cooking oil,43,3302,4096,0.002378,16.28,max_tokens,1,False,False,,,,,,,,,,,,,,
+case03,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,No Frills,120,4,No dairy,,54,3754,4096,0.002423,16.03,max_tokens,1,False,False,,,,,,,,,,,,,,
+case03,haiku-5.5-16k,claude-haiku-5-5,16000,default,No Frills,120,4,No dairy,,54,3754,6814,0.003782,27.33,end_turn,1,True,True,18,4,80.09,0,13,,0,0,0,0,0,0,0,0
+case04,haiku-5.5-16k,claude-haiku-5-5,16000,default,FreshCo,40,2,Vegetarian,,172,8888,4219,0.002998,16.77,end_turn,1,True,True,11,4,34.29,0,8,,0,0,0,0,0,0,0,0
+case04,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,FreshCo,40,2,Vegetarian,,172,8888,3378,0.002578,13.22,end_turn,1,True,True,11,4,38.87,1,7,,0,1,0,0,0,0,0,0
+case05,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,FreshCo,120,4,none,Rice; Eggs; Onions; Garlic,171,8815,4096,0.002929,15.43,max_tokens,1,False,False,,,,,,,,,,,,,,
+case05,haiku-5.5-16k,claude-haiku-5-5,16000,default,FreshCo,120,4,none,Rice; Eggs; Onions; Garlic,171,8815,5521,0.003642,20.84,end_turn,1,True,True,15,4,68.86,1,18,,0,1,0,0,0,0,0,0
+case06,haiku-5.5-16k,claude-haiku-5-5,16000,default,Walmart,75,1,No dairy,Pasta; Cooking oil,349,14964,4131,0.003562,16.3,end_turn,1,True,True,9,4,35.66,0,5,,0,0,0,0,0,0,0,0
+case06,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,Walmart,75,1,No dairy,Pasta; Cooking oil,349,14964,3489,0.003241,13.71,end_turn,1,True,True,10,4,36.5,0,6,,0,0,0,0,0,0,0,0
+case07,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,Walmart,120,4,Vegetarian,,338,14488,4096,0.003497,16.0,max_tokens,1,False,False,,,,,,,,,,,,,,
+case07,haiku-5.5-16k,claude-haiku-5-5,16000,default,Walmart,120,4,Vegetarian,,338,14488,6925,0.004911,25.48,end_turn,1,True,True,16,4,66.49,0,0,,0,0,0,0,0,0,0,0
+case08,haiku-5.5-16k,claude-haiku-5-5,16000,default,Walmart,40,2,none,,351,15037,3652,0.00333,14.86,end_turn,1,True,True,8,3,35.15,0,1,,0,0,0,0,0,0,0,0
+case08,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,Walmart,40,2,none,,351,15037,3380,0.003194,13.74,end_turn,1,True,True,9,4,39.63,0,0,,0,0,0,0,0,0,0,0
+case09,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,Loblaws,75,4,none,Eggs; Milk; Bread; Butter,223,10217,4096,0.00307,15.51,max_tokens,1,False,False,,,,,,,,,,,,,,
+case09,haiku-5.5-16k,claude-haiku-5-5,16000,default,Loblaws,75,4,none,Eggs; Milk; Bread; Butter,223,10217,4859,0.003451,18.68,end_turn,1,True,True,14,4,63.24,0,7,,0,0,0,0,0,0,0,0
+case10,haiku-5.5-16k,claude-haiku-5-5,16000,default,Loblaws,40,1,No dairy,,237,10872,3903,0.003039,15.51,end_turn,1,True,True,9,4,37.0,0,4,,0,0,0,0,0,0,0,0
+case10,haiku-5.5-low-effort,claude-haiku-5-5,4096,low,Loblaws,40,1,No dairy,,237,10872,3361,0.002768,13.14,end_turn,1,True,True,8,4,21.93,0,1,,0,0,0,0,0,0,0,0

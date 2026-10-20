@@ -28,3 +28,11 @@ backend/scraper/output/
 .idea/
 .vscode/
 *.log
+
+# Experiments (backend/scripts): keep the scripts, results and hand labels; leave
+# out the raw flyer snapshot and outputs the scripts regenerate.
+backend/scripts/budget_eval/cases.json
+backend/scripts/budget_eval/responses.jsonl
+!backend/scripts/budget_eval/results.csv
+!backend/scripts/budget_eval/violations.csv
+!backend/scripts/embedding_eval/stage2_labels.csv
