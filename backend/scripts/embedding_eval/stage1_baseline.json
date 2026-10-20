@@ -1,0 +1,194 @@
+{
+  "facts": 3609,
+  "m1_consecutive_weeks": {
+    "pairs": [
+      {
+        "market": "V7C4K2",
+        "chain": "FreshCo",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 143,
+        "matched": 2,
+        "rate": 0.013986013986013986,
+        "previous_week_products": 196
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "Loblaws",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 193,
+        "matched": 14,
+        "rate": 0.07253886010362694,
+        "previous_week_products": 221
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "No Frills",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 203,
+        "matched": 24,
+        "rate": 0.11822660098522167,
+        "previous_week_products": 222
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "Walmart",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 397,
+        "matched": 33,
+        "rate": 0.08312342569269521,
+        "previous_week_products": 299
+      }
+    ],
+    "summary": {
+      "store_weeks": 4,
+      "mean_rate": 0.07196872519188945,
+      "pooled_rate": 0.07799145299145299,
+      "matched": 73,
+      "products": 936
+    }
+  },
+  "m1b_previous_available_week": {
+    "pairs": [
+      {
+        "market": "M5S1Z9",
+        "chain": "FreshCo",
+        "week": "2026-10-08",
+        "previous_week": "2026-07-02",
+        "weeks_apart": 14,
+        "products": 179,
+        "matched": 4,
+        "rate": 0.0223463687150838,
+        "previous_week_products": 148
+      },
+      {
+        "market": "M5S1Z9",
+        "chain": "Loblaws",
+        "week": "2026-10-08",
+        "previous_week": "2026-07-02",
+        "weeks_apart": 14,
+        "products": 249,
+        "matched": 11,
+        "rate": 0.04417670682730924,
+        "previous_week_products": 236
+      },
+      {
+        "market": "M5S1Z9",
+        "chain": "No Frills",
+        "week": "2026-10-08",
+        "previous_week": "2026-07-02",
+        "weeks_apart": 14,
+        "products": 54,
+        "matched": 1,
+        "rate": 0.018518518518518517,
+        "previous_week_products": 74
+      },
+      {
+        "market": "M5S1Z9",
+        "chain": "Walmart",
+        "week": "2026-10-08",
+        "previous_week": "2026-07-02",
+        "weeks_apart": 14,
+        "products": 379,
+        "matched": 26,
+        "rate": 0.06860158311345646,
+        "previous_week_products": 384
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "FreshCo",
+        "week": "2026-06-25",
+        "previous_week": "2026-05-28",
+        "weeks_apart": 4,
+        "products": 196,
+        "matched": 3,
+        "rate": 0.015306122448979591,
+        "previous_week_products": 32
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "FreshCo",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 143,
+        "matched": 2,
+        "rate": 0.013986013986013986,
+        "previous_week_products": 196
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "Loblaws",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 193,
+        "matched": 14,
+        "rate": 0.07253886010362694,
+        "previous_week_products": 221
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "No Frills",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 203,
+        "matched": 24,
+        "rate": 0.11822660098522167,
+        "previous_week_products": 222
+      },
+      {
+        "market": "V7C4K2",
+        "chain": "Walmart",
+        "week": "2026-07-02",
+        "previous_week": "2026-06-25",
+        "weeks_apart": 1,
+        "products": 397,
+        "matched": 33,
+        "rate": 0.08312342569269521,
+        "previous_week_products": 299
+      }
+    ],
+    "summary": {
+      "store_weeks": 9,
+      "mean_rate": 0.050758244487878384,
+      "pooled_rate": 0.05920722528850978,
+      "matched": 118,
+      "products": 1993
+    }
+  },
+  "m2_history": {
+    "first_week": "2026-05-28",
+    "last_week": "2026-10-08",
+    "distinct_weeks": [
+      "2026-05-28",
+      "2026-06-25",
+      "2026-07-02",
+      "2026-10-08"
+    ],
+    "series": 3491,
+    "series_with_2plus_weeks": 118,
+    "series_rate": 0.033801203093669435,
+    "products": 2890,
+    "products_with_2plus_weeks": 144,
+    "products_rate": 0.04982698961937716
+  },
+  "m3_toronto_oct8": {
+    "q3_definition": {
+      "advertised": 857,
+      "with_earlier_history": 39
+    },
+    "all_rows": {
+      "advertised": 861,
+      "with_earlier_history": 42
+    }
+  }
+}

@@ -1,0 +1,51 @@
+n,chain,jul02_name,jul02_size,jul02_price,c1_name,c1_size,c1_price,c1_overlap,label,reason
+1,FreshCo,Core Power Protein Shake Bottles,0.414 kg / pack -,4.0,Fontaine Santé Protein Hummus,- / pack -,4.99,0.12,b,no protein shake last week; candidates are hummus and cereal bars
+2,FreshCo,Deep Cocktail Samosas,0.426 kg / pack -,3.29,Ocean Spray Cocktail 1.89 L or 100% Juice,1.89 kg / pack -,3.99,0.17,b,no samosas last week; candidates are juice cocktails
+3,FreshCo,Heluva Good! Dip,0.25 kg / pack -,2.0,Halo Top Frozen Desserts,0.473 kg / pack -,5.49,0.0,b,no dip last week
+4,FreshCo,Jordanka Sparkling Mineral Water,1.5 kg / pack -,2.49,Bubly 12x355 Ml or Montellier Sparkling Water 10x,0.355 kg / pack -,6.29,0.29,b,different water (Jordanka vs Bubly/Montellier)
+5,FreshCo,Kettle Chips,0.2 kg / pack -,2.0,Lacocina Tortilla Chips,0.4 kg / pack -,3.29,0.25,b,different chips (Compliments kettle 200 g vs tortilla/potato/plantain)
+6,FreshCo,Oatmeal Crisp Protein Cereal,0.455 kg / pack -,5.47,General Mills Cereal Selected Varieties,0.363 kg / pack -,3.49,0.17,b,Oatmeal Crisp 455 g $5.47 vs General Mills Selected Varieties 297-430 g $3.49: different promo and size
+7,FreshCo,Sainsbury's Fudge,0.125 kg / pack -,4.99,M&m's Pouches 155-230 G Selected Varieties,0.193 kg / pack -,4.99,0.2,b,no fudge last week
+8,FreshCo,"Yellow or White Flesh Nectarines Product of Usa, No.1 Grade 11.00/kg",- / pack -,4.99,"Yellow or White Flesh Peaches Product of Usa, No. I Grade 11.00/kg",- / pack -,4.99,0.67,b,nectarines vs peaches: different fruit despite 0.67 word overlap
+9,Loblaws,Chopped Salad Kits,0.326 kg / pack -,7.0,Reser's Salad,1.3 kg / pack -,7.49,0.2,b,salad kits vs Reser's salad: different product
+10,Loblaws,Cookie Dough Bites or Mochi Frozen Dessert,- / pack 6,5.0,Chicken Breast Bites,0.3 kg / pack -,12.0,0.12,b,no cookie dough bites or mochi last week
+11,Loblaws,Del Monte Fruit,0.398 kg / pack -,3.0,"Oasis Juices or Hydrafruit, Del Monte Nectars or Arizona Iced Tea",0.96 kg / pack -,2.0,0.2,b,canned Del Monte fruit vs Del Monte nectars: different product
+12,Loblaws,"Doritos Tortilla Chips, 210/235 G or Cheetos Snacks",0.223 kg / pack -,8.0,"Tortilla Chips, 320-350 G Kettle Cooked, Loads of World of Flavour or Rippled Potato Chips",0.335 kg / pack -,2.5,0.17,b,Doritos/Cheetos vs PC tortilla chips: different brand
+13,Loblaws,Gillette Mach 3 or Venus Disposable Razors,- / pack 8,10.5,"Starbucks Nespresso Vertuo Capsules, 8's Crank Whole Bean Coffee, 340 G or Illy Instant, Coffee",0.34 kg / pack 8,12.99,0.0,b,no razors last week
+14,Loblaws,Monster Energy Beverages,0.459 kg / pack -,7.0,Bodyarmor Beverages,0.473 kg / pack -,5.0,0.25,b,Monster vs BodyArmor: different brand
+15,Loblaws,"Nescafé Instant Coffee Concentrate, 500 Ml, Lavazza Oro or Decaf Ground Coffee",0.5 kg / pack -,8.5,"Starbucks Ground, 311/340 G K-cups, 10's or Crema Instant Coffee",0.326 kg / pack 10,12.0,0.23,b,Nescafe/Lavazza vs Starbucks: different products
+16,Loblaws,"Oasis 100% Juice Blends, Del Monte Nectar, Hydrafruit, Arizona Tea",0.96 kg / pack -,1.5,"Oasis Juices or Hydrafruit, Del Monte Nectars or Arizona Iced Tea",0.96 kg / pack -,2.0,0.5,a,same Oasis/Del Monte/Hydrafruit/Arizona 960 mL multi-brand listing reworded; price $2.00 -> $1.50
+17,Loblaws,"Reactine, 24-36's, Claritin, 15-30's, Allegra, 10-30's, or Benadryl 25mg, 100's Caplets, Tablets or Gels",- / pack 36,23.0,Reser's Salad,1.3 kg / pack -,7.49,0.1,b,no allergy medicine last week
+18,Loblaws,Swiss Chalet or Montana's Pork Back Ribs,0.625 kg / pack -,13.0,Pork Back Ribs,- / pack -,7.5,0.43,b,branded pre-cooked ribs 600/650 g vs fresh pork back ribs: different product
+19,Loblaws,Thick and Juicy Chicken or Turkey Burgers,1.13 kg / pack -,20.0,Fresh Fully Cooked Chicken Burgers,0.452 kg / pack -,9.0,0.25,b,PC 1.13 kg chicken/turkey burgers vs 452 g cooked chicken burgers: different product
+20,No Frills,Del Monte Juice Blends,2.5 kg / pack -,7.5,Orange Juice,2.5 kg / pack -,7.44,0.2,b,Del Monte juice blends vs PC orange juice: different brand
+21,No Frills,"Doritos, 210/235 G or Tostitos, 215-295 G Tortilla Chips",0.223 kg / pack -,3.0,Tortilla Chips,0.335 kg / pack -,2.5,0.5,b,Doritos/Tostitos vs PC tortilla chips: different brand
+22,No Frills,"Farmer's Market Loaf Cakes, 344-400 G or Croissants",0.372 kg / pack -,5.0,Farmer's Market Mini Cucumbers,- / pack -,3.64,0.38,b,loaf cakes/croissants vs Farmer's Market produce: only the brand words match
+23,No Frills,Maple Leaf Natural Selections Sliced Deli Meat,0.163 kg / pack -,6.0,Ziggy's Deli Meat,0.175 kg / pack -,3.25,0.22,b,Maple Leaf deli meat vs Ziggy's deli meat: different brand
+24,No Frills,"Oka, 190 G or Balderson Cheddar Cheese, 250/280 G or Bari Ricotta",0.265 kg / pack -,7.0,Cheese Slices,0.5 kg / pack -,15.0,0.14,b,Oka/Balderson/Bari vs PC cheese: different brands
+25,No Frills,Shan Spice Mix,0.075 kg / pack -,2.0,"Pearl Milling Company Pancake Mix, 905 G or Syrup",0.905 kg / pack -,3.5,0.12,b,no spice mix last week
+26,No Frills,Small Mixed Bouquet,- / pack -,10.0,Gay Lea Real Whipped Cream,0.225 kg / pack -,3.99,0.0,b,no flowers last week
+27,No Frills,"Smucker's Jam, Marmalade or Jelly",0.405 kg / pack -,6.0,S'mores Kit,0.6 kg / pack -,7.99,0.14,b,no jam at No Frills last week
+28,No Frills,"Taco Bell Creamy Sauce, 354 Ml or Dinner Kit",0.34 kg / pack -,4.0,"Taco Bell Dinner Kit, 260-420 G or Creamy Sauce",0.34 kg / pack -,4.0,1.0,a,"same Taco Bell sauce-or-dinner-kit listing, words in a different order; same size and $4.00"
+29,Walmart,Armstrong Cheese Block,- / pack -,4.98,Philadelphia Cream Cheese,- / pack -,3.98,0.2,b,Armstrong block vs cream cheese/slices: different product
+30,Walmart,Campbell's Soup,- / pack -,1.47,French's Ketchup,- / pack -,2.97,0.2,b,no Campbell's soup last week
+31,Walmart,Country Harvest Farmhouse Whole Wheat Bread,- / pack -,3.67,Organic Free-run Large Brown Eggs,- / pack -,6.97,0.0,b,no bread last week
+32,Walmart,Cut Veggies,- / pack -,3.97,Organic Free-run Large Brown Eggs,- / pack -,6.97,0.0,b,no cut veggies last week
+33,Walmart,Delicious Kitchen 100% Pure Coconut Water,- / pack -,2.77,Ufc Coconut Water,- / pack -,2.98,0.33,b,Delicious Kitchen vs UFC coconut water: different brand
+34,Walmart,Eco Wooden Cutlery,- / pack -,9.96,Organic Free-run Large Brown Eggs,- / pack -,6.97,0.0,b,no cutlery last week
+35,Walmart,Graco Solano 4-in-l Convertible Crib with Drawer,- / pack -,219.0,Espresso Machine with Built-in Grinder,- / pack -,249.99,0.1,b,no crib last week
+36,Walmart,Janes Pub Style Breaded Chicken Nuggets or Strips,- / pack -,6.96,Jerk Kanas City-style Bbq Chicken Portions,- / pack -,6.27,0.17,b,Janes nuggets vs other chicken portions: different product
+37,Walmart,Jerk Chicken Breast Skewers,- / pack -,6.97,Jerk Kanas City-style Bbq Chicken Portions,- / pack -,6.27,0.22,b,jerk chicken skewers vs BBQ chicken portions: different product
+38,Walmart,Kozy Shack Pudding Tubs,0.624 kg / pack -,3.47,Astro Yogurt Tubs,- / pack -,3.27,0.17,b,no Kozy Shack last week
+39,Walmart,Lean Ground Beef Tube,- / pack -,7.98,Lean Ground Halal Beef,- / pack -,8.78,0.6,b,lean ground beef tube $7.98 vs lean ground halal beef $8.78: different product
+40,Walmart,Lilydale Air-chilled Back-attached Chicken Leg Quarters,- / pack -,3.98,Mina Halal Chicken Leg Quarter,- / pack -,3.98,0.18,b,Lilydale vs Mina Halal leg quarters: different brand (same price)
+41,Walmart,Marcangelo Pork Kabobs,- / pack -,9.97,Marcangelo Fresh Chicken or Pork Kabobs,- / pack -,9.97,0.6,c,pork kabobs $9.97 vs 'chicken or pork kabobs' $9.97: single item vs a two-item listing
+42,Walmart,Mini Cupcakes 12-pack,- / pack 12,3.97,O Canada! Mini Potatoes,- / pack -,1.98,0.2,b,no cupcakes last week
+43,Walmart,Native Conditioner,- / pack -,11.98,Native Shampoo or Conditioner,- / pack -,11.98,0.67,c,Native conditioner $11.98 vs 'Native shampoo or conditioner' $11.98: single item vs a two-item listing
+44,Walmart,Palmolive Dish Soap,- / pack -,1.97,Scent Theory Hand Soap,- / pack -,4.67,0.17,b,Palmolive dish soap vs Scent Theory hand soap: different product
+45,Walmart,Parent's Choice Baby Food Puree Variety Pack,- / pack -,5.74,Fancy Feast Wet Cat Food Variety Pack,- / pack -,9.44,0.18,b,baby food vs cat food
+46,Walmart,Parle-g,- / pack -,2.54,Parle Hide & Seek Chocolate Chip Cookies,- / pack -,1.12,0.17,b,Parle-G vs Parle Hide & Seek: different biscuits
+47,Walmart,Potato Wedges,- / pack -,6.18,Purple Sweet Potato,- / pack -,1.98,0.25,b,potato wedges vs purple sweet potato
+48,Walmart,Purina One Wet Dog Food Variety Pack,- / pack -,44.47,Fancy Feast Wet Cat Food Variety Pack,- / pack -,9.44,0.33,b,Purina One wet dog food vs other pet food: different product
+49,Walmart,Ufc Coconut Water,1 kg / pack -,2.98,Ufc Coconut Water,- / pack -,2.98,1.0,a,"same UFC coconut water, $2.98; size parsed this week (1 L) but missing last week, so the size key differs"
+50,Walmart,Vibrant Life Enclosed Cat Litter Pan,- / pack -,34.94,Temptations Cat Treats,- / pack -,2.58,0.12,b,no cat litter pan last week

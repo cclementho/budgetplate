@@ -1,0 +1,156 @@
+case_id,arm,kind,type,detail
+case01,haiku-4.5,review,stated_total_differs,"model said $38.79, line subtotals sum to $39.19"
+case02,haiku-4.5,review,item_name_reworded,'White Potatoes' @ $3.99 matched flyer deal 'White Potatoes or Yellow Potatoes'
+case02,haiku-4.5,review,item_name_reworded,"'Sweet Potatoes' @ $0.99 matched flyer deal 'Sweet Potatoes Acorn, Butternut, Buttercup or Spaghetti Squash'"
+case02,haiku-4.5,review,item_name_reworded,"'Cauliflower' @ $3.99 matched flyer deal 'Cauliflower, Avocados'"
+case02,haiku-4.5,review,item_name_reworded,'Green Seedless Grapes' @ $1.49 matched flyer deal 'Green or Red Seedless Grapes'
+case02,haiku-4.5,review,item_name_reworded,"""Farmer's Market Lemons"" @ $2.99 matched flyer deal ""Farmer's Market Lemons, 2 Lb Bag"""
+case02,haiku-4.5,review,item_name_reworded,"'Iögo Creamy Yogurt' @ $6.5 matched flyer deal ""Iögo Creamy 16x100 G or Siggi's Skyr Yogurt"""
+case02,haiku-4.5,review,item_name_reworded,"'Aylmer Accents Diced Tomatoes' @ $2.0 matched flyer deal 'Aylmer Accents, 540 Ml or Ro Tel Diced Tomatoes'"
+case02,haiku-4.5,review,meal_uses_pantry_item,'Roasted Potatoes with Yogurt & Lemon' uses 'Cooking oil (at home)' from home (allowed by the prompt's rule 5)
+case02,haiku-4.5,review,meal_uses_pantry_item,'Curried Cauliflower & Tomato' uses 'Rice (at home)' from home (allowed by the prompt's rule 5)
+case02,haiku-4.5,review,meal_uses_pantry_item,'Curried Cauliflower & Tomato' uses 'Cooking oil (at home)' from home (allowed by the prompt's rule 5)
+case02,haiku-4.5,review,maybe_not_vegetarian,basket 'Broth'
+case02,haiku-4.5,review,maybe_not_vegetarian,meal ingredient 'Broth'
+case03,haiku-4.5,review,stated_total_differs,"model said $119.14, line subtotals sum to $90.13"
+case03,haiku-4.5,review,maybe_contains_dairy,"basket 'Country Harvest Bread, 600 G or Bagels'"
+case04,haiku-4.5,review,item_name_reworded,"""Aman's Lentils (1.81 kg)"" @ $3.99 matched flyer deal ""Aman's Lentils 1.81 Kg Selected Varieties"""
+case04,haiku-4.5,review,item_name_reworded,"'Barilla Pasta' @ $1.69 matched flyer deal 'Barilla, Catelli Classic, Smart or Healthy Harvest Pasta'"
+case04,haiku-4.5,review,item_name_reworded,"'Carrots or Onions (3 lb)' @ $2.49 matched flyer deal 'Carrots or Onions 3 Lb Product of Canada, Canada No. 1, 1.36 Kg, White or Brown Mushrooms 227 G Product of Ontario or Iceberg Lettuce Product of Canada, Canada No. 1'"
+case04,haiku-4.5,review,item_name_reworded,"'Broccoli Crowns (Canada)' @ $1.99 matched flyer deal 'Broccoli Crowns Product of Canada or Brussels Sprouts Product of Ontario, Canada No. 1, 4.39/kg'"
+case04,haiku-4.5,review,item_name_reworded,"'Roma Tomatoes or Green Peppers' @ $1.88 matched flyer deal 'Roma Tomatoes Product of Ontario, Canada No. 1 or Mexico No. 1 Grade or Green Peppers Product of Ontario 4.14/kg'"
+case04,haiku-4.5,review,item_name_reworded,'Spinach or Methi Bunch' @ $1.99 matched flyer deal 'Spinach or Methi Bunch Product of Canada or Usa'
+case04,haiku-4.5,review,item_name_reworded,"'Yellow Potatoes (10 lb)' @ $1.99 matched flyer deal 'Yellow Potatoes 10 Lb Product of Canada, Canada No. 1'"
+case04,haiku-4.5,review,item_name_reworded,'Cilantro or Mint Bunch' @ $0.99 matched flyer deal 'Cilantro or Mint Bunch Product of Canada'
+case04,haiku-4.5,review,item_name_reworded,"""Dempster's White or Whole Wheat Bread"" @ $2.49 matched flyer deal ""Dempster's White or Whole Wheat Bread 675 G or Buns"""
+case04,haiku-4.5,review,item_name_reworded,"'Gala or Mcintosh Apples (Ontario)' @ $1.49 matched flyer deal 'Gala or Mcintosh Apples Product of Ontario, Canada Extra Fancy 3.28/kg'"
+case04,haiku-4.5,review,stated_total_differs,"model said $39.15, line subtotals sum to $29.55"
+case04,haiku-4.5,review,maybe_not_vegetarian,"basket ""Campbell's Broth"""
+case04,haiku-4.5,review,maybe_not_vegetarian,meal 'Vegetable & Lentil Soup'
+case04,haiku-4.5,review,maybe_not_vegetarian,"meal ingredient ""Campbell's Broth"""
+case05,haiku-4.5,review,item_name_reworded,"'The Little Potato Co. Yellow, Red or Trio Potatoes 1.36 Kg' @ $6.0 matched flyer deal 'The Little Potato Co. Yellow, Red or Trio Potatoes 1.36 Kg Product of Canada, Canada No. 1'"
+case05,haiku-4.5,review,item_name_reworded,"'Broccoli Crowns Product of Canada or Brussels Sprouts' @ $1.99 matched flyer deal 'Broccoli Crowns Product of Canada or Brussels Sprouts Product of Ontario, Canada No. 1, 4.39/kg'"
+case05,haiku-4.5,review,item_name_reworded,"'Roma Tomatoes Product of Ontario, Canada No. 1' @ $1.88 matched flyer deal 'Roma Tomatoes Product of Ontario, Canada No. 1 or Mexico No. 1 Grade or Green Peppers Product of Ontario 4.14/kg'"
+case05,haiku-4.5,review,item_name_reworded,"'Gala or Mcintosh Apples Product of Ontario' @ $1.49 matched flyer deal 'Gala or Mcintosh Apples Product of Ontario, Canada Extra Fancy 3.28/kg'"
+case05,haiku-4.5,review,item_name_reworded,'Spinach or Methi Bunch Product of Canada' @ $1.99 matched flyer deal 'Spinach or Methi Bunch Product of Canada or Usa'
+case05,haiku-4.5,review,item_name_reworded,"'Club House Recipe Mixes 20-47 G' @ $0.99 matched flyer deal 'Club House Recipe Mixes 20-47 G, Franco-american Gravy 284 Ml or Swiss Chalet or the Keg Sauce Mixes'"
+case05,haiku-4.5,review,item_name_reworded,"""Dempster's White or Whole Wheat Bread 675 G"" @ $2.49 matched flyer deal ""Dempster's White or Whole Wheat Bread 675 G or Buns"""
+case05,haiku-4.5,review,stated_total_differs,"model said $104.85, line subtotals sum to $82.70"
+case06,haiku-5.5,review,meal_uses_pantry_item,'Pork Fried Rice' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5,review,meal_uses_pantry_item,'Sheet-Pan Chicken and Potatoes' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5,review,meal_uses_pantry_item,'Pork and Squash Pasta' uses 'Pasta' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5,review,meal_uses_pantry_item,'Chicken and Cauliflower Rice Bowl' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-4.5,review,stated_total_differs,"model said $48.52, line subtotals sum to $47.53"
+case07,haiku-4.5,review,item_name_reworded,'Bulk Gala or McIntosh Apples' @ $0.98 matched flyer deal 'Bulk Mcintosh or Gala Apples'
+case07,haiku-4.5,review,stated_total_differs,"model said $97.91, line subtotals sum to $81.28"
+case07,haiku-4.5,review,maybe_not_vegetarian,"basket ""Campbell's Broth"""
+case08,haiku-5.5,review,item_name_reworded,'Maple Leaf Prime Boneless Skinless Chicken Breasts' @ $6.34 matched flyer deal 'Maple Leaf Prime Raised Without Antibiotics Boneless Skinless Chicken Breasts'
+case08,haiku-4.5,review,stated_total_differs,"model said $37.04, line subtotals sum to $37.08"
+case09,haiku-4.5,violation,meal_ingredient_not_in_basket,"'Fresh Salad & Sandwich Fixings' uses 'Turkey (leftover)', which is not on the shopping list"
+case09,haiku-4.5,review,item_name_reworded,"""Farmer's Market Carrots, 3 Lb Bag"" @ $3.0 matched flyer deal ""Farmer's Market Carrots or Yellow Onions, 3 Lb Bag"""
+case09,haiku-4.5,review,item_name_reworded,"'Shredded Cheese, 250–320 G' @ $4.99 matched flyer deal 'Shredded Cheese, 250-320 G or Black Diamond Cheese Bars or Shredded Cheese'"
+case09,haiku-4.5,review,item_name_reworded,"""Bick's Pickles, 500 mL"" @ $4.75 matched flyer deal ""Bick's Pickles, 500 Ml or Sardo Olives"""
+case09,haiku-4.5,review,meal_uses_pantry_item,'Roasted Turkey Dinner' uses 'Bread (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Roasted Turkey Dinner' uses 'Butter (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Mac & Cheese with Roasted Veg' uses 'Milk (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Mac & Cheese with Roasted Veg' uses 'Butter (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Breakfast Cereal & Berry Bowls' uses 'Milk (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Fresh Salad & Sandwich Fixings' uses 'Bread (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,meal_uses_pantry_item,'Simple Jelly & Fruit Dessert' uses 'Milk (you have at home)' from home (allowed by the prompt's rule 5)
+case09,haiku-4.5,review,stated_total_differs,"model said $71.17, line subtotals sum to $60.72"
+case10,haiku-5.5,review,item_name_reworded,"'Olive Oil, 750 mL' @ $6.99 matched flyer deal ""Olive Oil, 750 Ml or Hellmann's Mayonnaise or Dressing"""
+case10,haiku-5.5,review,stated_total_differs,"model said $34.92, line subtotals sum to $35.92"
+case10,haiku-4.5,review,item_name_reworded,"""Farmer's Market Carrots, 3 Lb Bag"" @ $3.0 matched flyer deal ""Farmer's Market Carrots or Yellow Onions, 3 Lb Bag"""
+case10,haiku-4.5,review,stated_total_differs,"model said $39.24, line subtotals sum to $35.24"
+case10,haiku-4.5,review,maybe_contains_dairy,basket 'Dare Bear Paws Cookies'
+case01,haiku-5.5-low-effort,review,item_name_reworded,"'Country Harvest Bread, 600 g' @ $3.0 matched flyer deal 'Country Harvest Bread, 600 G or Bagels'"
+case01,haiku-5.5-low-effort,review,item_name_reworded,"'Aylmer Diced Tomatoes, 540 mL' @ $2.0 matched flyer deal 'Aylmer Accents, 540 Ml or Ro Tel Diced Tomatoes'"
+case01,haiku-5.5-low-effort,review,item_name_reworded,'White Potatoes' @ $3.99 matched flyer deal 'White Potatoes or Yellow Potatoes'
+case01,haiku-5.5-low-effort,review,item_name_reworded,"'Sweet Potatoes' @ $0.99 matched flyer deal 'Sweet Potatoes Acorn, Butternut, Buttercup or Spaghetti Squash'"
+case01,haiku-5.5-16k,review,item_name_reworded,"'Aylmer Diced Tomatoes' @ $2.0 matched flyer deal 'Aylmer Accents, 540 Ml or Ro Tel Diced Tomatoes'"
+case01,haiku-5.5-16k,review,item_name_reworded,"'Sweet Potatoes' @ $0.99 matched flyer deal 'Sweet Potatoes Acorn, Butternut, Buttercup or Spaghetti Squash'"
+case01,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower and Avocados' @ $3.99 matched flyer deal 'Cauliflower, Avocados'"
+case01,haiku-5.5-16k,review,item_name_reworded,"""Farmer's Market Lemons"" @ $2.99 matched flyer deal ""Farmer's Market Lemons, 2 Lb Bag"""
+case01,haiku-5.5-16k,review,item_name_reworded,"'Country Harvest Bread' @ $3.0 matched flyer deal 'Country Harvest Bread, 600 G or Bagels'"
+case02,haiku-5.5-16k,review,item_name_reworded,"'Aylmer Diced Tomatoes (540 mL)' @ $2.0 matched flyer deal 'Aylmer Accents, 540 Ml or Ro Tel Diced Tomatoes'"
+case02,haiku-5.5-16k,review,item_name_reworded,"'Iögo Creamy Yogurt (16x100 g)' @ $6.5 matched flyer deal ""Iögo Creamy 16x100 G or Siggi's Skyr Yogurt"""
+case02,haiku-5.5-16k,review,item_name_reworded,'White Potatoes (5 lb bag)' @ $3.99 matched flyer deal 'White Potatoes or Yellow Potatoes'
+case02,haiku-5.5-16k,review,item_name_reworded,"'Sweet Potatoes (or Squash)' @ $0.99 matched flyer deal 'Sweet Potatoes Acorn, Butternut, Buttercup or Spaghetti Squash'"
+case02,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower' @ $3.99 matched flyer deal 'Cauliflower, Avocados'"
+case02,haiku-5.5-16k,review,item_name_reworded,"'Frozen Fruit (300-600 g)' @ $2.99 matched flyer deal 'Frozen Fruit, 300-600 G or Breyers Classic Frozen Dessert'"
+case02,haiku-5.5-16k,review,meal_uses_pantry_item,'Loaded Cheddar Baked Potatoes' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case02,haiku-5.5-16k,review,meal_uses_pantry_item,'Lemon Roasted Cauliflower with Hummus' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case02,haiku-5.5-16k,review,meal_uses_pantry_item,'Sweet Potato Tomato Curry over Rice' uses 'Rice' from home (allowed by the prompt's rule 5)
+case02,haiku-5.5-16k,review,meal_uses_pantry_item,'Sweet Potato Tomato Curry over Rice' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case03,haiku-5.5-16k,review,item_name_reworded,'White Potatoes' @ $3.99 matched flyer deal 'White Potatoes or Yellow Potatoes'
+case03,haiku-5.5-16k,review,item_name_reworded,"'Sweet Potatoes' @ $0.99 matched flyer deal 'Sweet Potatoes Acorn, Butternut, Buttercup or Spaghetti Squash'"
+case03,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower and Avocados' @ $3.99 matched flyer deal 'Cauliflower, Avocados'"
+case03,haiku-5.5-16k,review,item_name_reworded,"'Aylmer Diced Tomatoes' @ $2.0 matched flyer deal 'Aylmer Accents, 540 Ml or Ro Tel Diced Tomatoes'"
+case03,haiku-5.5-16k,review,item_name_reworded,'Classico Pasta Sauce' @ $2.97 matched flyer deal 'Classico Sauce'
+case03,haiku-5.5-16k,review,item_name_reworded,"""Farmer's Market Lemons"" @ $2.99 matched flyer deal ""Farmer's Market Lemons, 2 Lb Bag"""
+case03,haiku-5.5-16k,review,item_name_reworded,"'Country Harvest Bread' @ $3.0 matched flyer deal 'Country Harvest Bread, 600 G or Bagels'"
+case03,haiku-5.5-16k,review,item_name_reworded,"'Kraft Peanut Butter' @ $5.97 matched flyer deal 'Kraft Peanut Butter, 750 G/'"
+case03,haiku-5.5-16k,review,item_name_reworded,"'Frozen Mixed Fruit' @ $2.99 matched flyer deal 'Frozen Fruit, 300-600 G or Breyers Classic Frozen Dessert'"
+case03,haiku-5.5-16k,review,maybe_contains_dairy,basket 'Classico Pasta Sauce'
+case03,haiku-5.5-16k,review,maybe_contains_dairy,basket 'Country Harvest Bread'
+case03,haiku-5.5-16k,review,maybe_contains_dairy,meal ingredient 'Classico Pasta Sauce'
+case03,haiku-5.5-16k,review,maybe_contains_dairy,meal ingredient 'Country Harvest Bread'
+case04,haiku-5.5-16k,review,item_name_reworded,"""Aman's Lentils 1.81 kg"" @ $3.99 matched flyer deal ""Aman's Lentils 1.81 Kg Selected Varieties"""
+case04,haiku-5.5-16k,review,item_name_reworded,'Unico Beans' @ $1.79 matched flyer deal 'Unico Beans or Tomatoes'
+case04,haiku-5.5-16k,review,item_name_reworded,"'Barilla Pasta' @ $1.69 matched flyer deal 'Barilla, Catelli Classic, Smart or Healthy Harvest Pasta'"
+case04,haiku-5.5-16k,review,item_name_reworded,"'Yellow Potatoes 10 lb' @ $1.99 matched flyer deal 'Yellow Potatoes 10 Lb Product of Canada, Canada No. 1'"
+case04,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower' @ $3.99 matched flyer deal 'Cauliflower Product of Canada, Canada No. 1'"
+case04,haiku-5.5-16k,review,item_name_reworded,'Spinach Bunch' @ $1.99 matched flyer deal 'Spinach or Methi Bunch Product of Canada or Usa'
+case04,haiku-5.5-16k,review,item_name_reworded,"'Roma Tomatoes' @ $1.88 matched flyer deal 'Roma Tomatoes Product of Ontario, Canada No. 1 or Mexico No. 1 Grade or Green Peppers Product of Ontario 4.14/kg'"
+case04,haiku-5.5-16k,review,item_name_reworded,"'Carrots or Onions 3 lb bag' @ $2.49 matched flyer deal 'Carrots or Onions 3 Lb Product of Canada, Canada No. 1, 1.36 Kg, White or Brown Mushrooms 227 G Product of Ontario or Iceberg Lettuce Product of Canada, Canada No. 1'"
+case04,haiku-5.5-low-effort,violation,price_not_on_flyer,"'The Little Potato Co. / Yellow Potatoes 10 lb' @ $1.99: flyer lists 'The Little Potato Co. Yellow, Red or Trio Potatoes 1.36 Kg Product of Canada, Canada No. 1' at $6.00"
+case04,haiku-5.5-low-effort,review,item_name_reworded,"""Aman's Lentils 1.81 kg"" @ $3.99 matched flyer deal ""Aman's Lentils 1.81 Kg Selected Varieties"""
+case04,haiku-5.5-low-effort,review,item_name_reworded,'Unico Beans' @ $1.79 matched flyer deal 'Unico Beans or Tomatoes'
+case04,haiku-5.5-low-effort,review,item_name_reworded,"'Barilla Pasta' @ $1.69 matched flyer deal 'Barilla, Catelli Classic, Smart or Healthy Harvest Pasta'"
+case04,haiku-5.5-low-effort,review,item_name_reworded,"""Dempster's White Bread 675 g"" @ $2.49 matched flyer deal ""Dempster's White or Whole Wheat Bread 675 G or Buns"""
+case04,haiku-5.5-low-effort,review,item_name_reworded,"'Carrots or Onions 3 lb' @ $2.49 matched flyer deal 'Carrots or Onions 3 Lb Product of Canada, Canada No. 1, 1.36 Kg, White or Brown Mushrooms 227 G Product of Ontario or Iceberg Lettuce Product of Canada, Canada No. 1'"
+case04,haiku-5.5-low-effort,review,item_name_reworded,"'Broccoli Crowns' @ $1.99 matched flyer deal 'Broccoli Crowns Product of Canada or Brussels Sprouts Product of Ontario, Canada No. 1, 4.39/kg'"
+case04,haiku-5.5-low-effort,review,item_name_reworded,'Spinach Bunch' @ $1.99 matched flyer deal 'Spinach or Methi Bunch Product of Canada or Usa'
+case05,haiku-5.5-16k,violation,price_not_on_flyer,"'The Little Potato Co. Yellow Potatoes 10 lb' @ $1.99: flyer lists 'The Little Potato Co. Yellow, Red or Trio Potatoes 1.36 Kg Product of Canada, Canada No. 1' at $6.00"
+case05,haiku-5.5-16k,review,item_name_reworded,"""Aman's Lentils 1.81 Kg"" @ $3.99 matched flyer deal ""Aman's Lentils 1.81 Kg Selected Varieties"""
+case05,haiku-5.5-16k,review,item_name_reworded,"'Barilla Pasta' @ $1.69 matched flyer deal 'Barilla, Catelli Classic, Smart or Healthy Harvest Pasta'"
+case05,haiku-5.5-16k,review,item_name_reworded,"""Dempster's White Bread 675 g"" @ $2.49 matched flyer deal ""Dempster's White or Whole Wheat Bread 675 G or Buns"""
+case05,haiku-5.5-16k,review,item_name_reworded,"'Broccoli Crowns' @ $1.99 matched flyer deal 'Broccoli Crowns Product of Canada or Brussels Sprouts Product of Ontario, Canada No. 1, 4.39/kg'"
+case05,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower' @ $3.99 matched flyer deal 'Cauliflower Product of Canada, Canada No. 1'"
+case05,haiku-5.5-16k,review,item_name_reworded,"'Roma Tomatoes' @ $1.88 matched flyer deal 'Roma Tomatoes Product of Ontario, Canada No. 1 or Mexico No. 1 Grade or Green Peppers Product of Ontario 4.14/kg'"
+case05,haiku-5.5-16k,review,item_name_reworded,'Zucchini' @ $1.99 matched flyer deal 'Eggplant or Green or Grey Zucchini Product of Ontario or Usa 4.39/kg'
+case05,haiku-5.5-16k,review,item_name_reworded,'Spinach Bunch' @ $1.99 matched flyer deal 'Spinach or Methi Bunch Product of Canada or Usa'
+case05,haiku-5.5-16k,review,item_name_reworded,'Modhani Yogurt 750 g' @ $2.0 matched flyer deal 'Modhani Dahi or Hahal Yogurt 3.2% or 2% 750 G Yogurt'
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Garlic Roast Chicken with Potatoes and Broccoli' uses 'Garlic' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Garlic Roast Chicken with Potatoes and Broccoli' uses 'Onions' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Hearty Lentil and Tomato Soup' uses 'Onions' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Hearty Lentil and Tomato Soup' uses 'Garlic' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Ham and Zucchini Fried Rice' uses 'Rice' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Ham and Zucchini Fried Rice' uses 'Eggs' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Ham and Zucchini Fried Rice' uses 'Onions' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Ham and Zucchini Fried Rice' uses 'Garlic' from home (allowed by the prompt's rule 5)
+case05,haiku-5.5-16k,review,meal_uses_pantry_item,'Creamy Ham and Spinach Pasta' uses 'Garlic' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-16k,review,item_name_reworded,'Maple Leaf Prime Boneless Skinless Chicken Breasts' @ $6.34 matched flyer deal 'Maple Leaf Prime Raised Without Antibiotics Boneless Skinless Chicken Breasts'
+case06,haiku-5.5-16k,review,meal_uses_pantry_item,'Ground Pork and Pepper Pasta' uses 'Pasta' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-16k,review,meal_uses_pantry_item,'Ground Pork and Pepper Pasta' uses 'Cooking Oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-16k,review,meal_uses_pantry_item,'Pan-Seared Salmon with Rice and Roasted Sweet Potato' uses 'Cooking Oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-16k,review,meal_uses_pantry_item,'Pork and Pepper Fried Rice' uses 'Cooking Oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-low-effort,review,item_name_reworded,'Maple Leaf Prime Boneless Skinless Chicken Breasts' @ $6.34 matched flyer deal 'Maple Leaf Prime Raised Without Antibiotics Boneless Skinless Chicken Breasts'
+case06,haiku-5.5-low-effort,review,meal_uses_pantry_item,'Chicken and Broccoli Rice Stir-fry' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-low-effort,review,meal_uses_pantry_item,'Sheet-pan Chicken and Potatoes' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-low-effort,review,meal_uses_pantry_item,'Pork and Pepper Pasta' uses 'Pasta' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-low-effort,review,meal_uses_pantry_item,'Pork and Pepper Pasta' uses 'Cooking oil' from home (allowed by the prompt's rule 5)
+case06,haiku-5.5-low-effort,review,stated_total_differs,"model said $38.50, line subtotals sum to $36.50"
+case08,haiku-5.5-16k,review,item_name_reworded,'Maple Leaf Prime Boneless Skinless Chicken Breasts' @ $6.34 matched flyer deal 'Maple Leaf Prime Raised Without Antibiotics Boneless Skinless Chicken Breasts'
+case09,haiku-5.5-16k,review,item_name_reworded,"'Whole Chicken' @ $15.0 matched flyer deal 'Whole Chicken, Up To'"
+case09,haiku-5.5-16k,review,item_name_reworded,"""Farmer's Market Yellow Onions"" @ $3.0 matched flyer deal ""Farmer's Market Carrots or Yellow Onions, 3 Lb Bag"""
+case09,haiku-5.5-16k,review,item_name_reworded,"'Cauliflower' @ $5.0 matched flyer deal 'Cauliflower, Each, French Beans'"
+case09,haiku-5.5-16k,review,item_name_reworded,"'Little Gems Mini Potatoes, 680 g' @ $4.5 matched flyer deal 'Little Gems Red, Yellow or Mixed Mini Potatoes, 680 G, Mini Sweet Potatoes'"
+case09,haiku-5.5-16k,review,item_name_reworded,"'Shredded Cheese, 250-320 g' @ $4.99 matched flyer deal 'Shredded Cheese, 250-320 G or Black Diamond Cheese Bars or Shredded Cheese'"
+case09,haiku-5.5-16k,review,meal_uses_pantry_item,'Roast Chicken with Sweet Potatoes and Carrots' uses 'Butter' from home (allowed by the prompt's rule 5)
+case09,haiku-5.5-16k,review,meal_uses_pantry_item,'Garlic Pork Tenderloin with Roasted Potatoes and Cauliflower' uses 'Butter' from home (allowed by the prompt's rule 5)
+case10,haiku-5.5-16k,review,item_name_reworded,"'Whole Chicken' @ $15.0 matched flyer deal 'Whole Chicken, Up To'"
+case10,haiku-5.5-16k,review,item_name_reworded,"'Pork Tenderloin' @ $4.0 matched flyer deal 'Pork Tenderloin, Package of 2'"
+case10,haiku-5.5-16k,review,item_name_reworded,"'Yellow Onions and Carrots (3 lb bag)' @ $3.0 matched flyer deal ""Farmer's Market Carrots or Yellow Onions, 3 Lb Bag"""
+case10,haiku-5.5-16k,review,item_name_reworded,'Honeycrisp Apples' @ $2.0 matched flyer deal 'Extra Large Green or Red Seedless Grapes or Honeycrisp Apples'
+case10,haiku-5.5-low-effort,review,item_name_reworded,"""Campbell's Broth"" @ $1.5 matched flyer deal ""Campbell's Broth or Concentrated Broth"""
