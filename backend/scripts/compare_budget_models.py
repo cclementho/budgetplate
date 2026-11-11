@@ -43,6 +43,7 @@ import anthropic  # noqa: E402
 
 from ai.budget import MAX_TOKENS as PRODUCTION_MAX_TOKENS  # noqa: E402
 from ai.budget import SYSTEM_PROMPT, build_budget_prompt  # noqa: E402
+from ai.candidates import select_candidates  # noqa: E402
 from ai.client import _extract_json  # noqa: E402
 from config import settings  # noqa: E402
 
@@ -207,7 +208,9 @@ def load_cases(path: str = CASES_FILE) -> tuple[dict, list[dict]]:
     for c in data["cases"]:
         store = by_id[c["profile"]["merchant"]]
         c["deals"] = [store[i] for i in c["deal_ids_in_prompt"]]
-        c["prompt"] = build_budget_prompt(c["profile"], c["deals"])
+        # Same shortlist step the /budget-plan route applies before prompting.
+        c["candidates"] = select_candidates(c["deals"], c["profile"].get("cuisines"))
+        c["prompt"] = build_budget_prompt(c["profile"], c["candidates"])
         c["prompt_sha"] = hashlib.sha256((SYSTEM_PROMPT + c["prompt"]).encode()).hexdigest()[:16]
     return data, data["cases"]
 

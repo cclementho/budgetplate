@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan
+from ai.candidates import select_candidates
 from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
@@ -132,7 +133,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
     """
     postal_code = profile.postal_code.replace(" ", "").upper()
     watch = _Stopwatch()
-    deals_sent = 0
+    deals_available = deals_sent = 0
     outcome = "ok"
     try:
         if not watch.time("fresh_check_ms", has_fresh_data, postal_code):
@@ -151,7 +152,11 @@ def budget_plan(profile: BudgetProfile) -> dict:
         filtered, skipped_pantry = watch.time(
             "filter_ms", _filter_deals, deals, profile.restriction, profile.pantry
         )
-        deals_sent = len(filtered)
+        # Cut 400+ deals down to a balanced, good-value shortlist for Claude.
+        candidates = watch.time(
+            "prefilter_ms", select_candidates, filtered, profile.cuisines
+        )
+        deals_available, deals_sent = len(filtered), len(candidates)
 
         try:
             plan = watch.time(
@@ -165,7 +170,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
                     "pantry": profile.pantry,
                     "merchant": profile.merchant,
                 },
-                filtered,
+                candidates,
             )
         except ClaudeResponseError as exc:
             # Already logged with stop_reason and token counts in ai.client.
@@ -175,9 +180,10 @@ def budget_plan(profile: BudgetProfile) -> dict:
         # One line per request so Render logs show where the time went.
         stats = last_call_stats() if "claude_ms" in watch.stages else {}
         logger.info(
-            "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_sent=%d "
-            "model=%s input_tokens=%s output_tokens=%s",
-            postal_code, profile.merchant, outcome, watch.summary(), deals_sent,
+            "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_available=%d "
+            "deals_sent=%d model=%s input_tokens=%s output_tokens=%s",
+            postal_code, profile.merchant, outcome, watch.summary(), deals_available,
+            deals_sent,
             stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
         )
 
