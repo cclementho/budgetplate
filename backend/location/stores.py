@@ -15,6 +15,7 @@ store far away — the core BudgetPlate differentiator.
 
 import logging
 import math
+import time
 
 import requests
 
@@ -365,12 +366,25 @@ def find_stores(postal_code: str, deal_counts: dict | None = None) -> dict:
     walk_minutes, band, price_index, deals_count, score, supported.
     """
     deal_counts = deal_counts or {}
+    t0 = time.perf_counter()
     coords = geocode_postal_code(postal_code)
+    geocode_ms = round((time.perf_counter() - t0) * 1000)
     if coords is None:
-        logger.info("Could not geocode postal code %s", postal_code)
-        return {"stores": [], "note": None}
+        logger.info("Could not geocode postal code %s (geocode_ms=%d)", postal_code, geocode_ms)
+        return {"stores": [], "note": None, "timing": {"geocode_ms": geocode_ms, "overpass_ms": 0}}
     lat, lng = coords
 
+    t0 = time.perf_counter()
+    try:
+        result = _find_near(lat, lng, postal_code, deal_counts)
+    finally:
+        overpass_ms = round((time.perf_counter() - t0) * 1000)
+    result["timing"] = {"geocode_ms": geocode_ms, "overpass_ms": overpass_ms}
+    return result
+
+
+def _find_near(lat: float, lng: float, postal_code: str, deal_counts: dict) -> dict:
+    """Overpass search around a point (5km, then 10km), matched to chains."""
     # 1. Primary 5km search.
     parsed = _search_radius(lat, lng, RADIUS_PRIMARY_M, postal_code)
     supported = _match_supported(parsed, deal_counts)

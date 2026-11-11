@@ -92,3 +92,22 @@ def test_cut_off_plan_returns_a_friendly_502_not_a_server_error(claude, monkeypa
 
     assert res.status_code == 502
     assert res.json() == {"detail": routes.budget.PLAN_FAILED_MESSAGE}
+
+
+def test_route_logs_one_timing_line_with_stages_and_tokens(claude, monkeypatch, caplog):
+    import main
+
+    monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
+    monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [
+        {"clean_name": "Bok Choy", "price": 1.99, "price_per_kg": None, "category": "Produce"}])
+
+    with caplog.at_level(logging.INFO, logger="budgetplate.budget"):
+        res = TestClient(main.app).post("/api/budget-plan", json={
+            "postal_code": "M5S 1Z9", "merchant": "No Frills", "budget": 40, "people": 1})
+
+    assert res.status_code == 200
+    (line,) = [r.getMessage() for r in caplog.records if "budget_plan timing" in r.getMessage()]
+    for part in ("fresh_check_ms=", "get_items_ms=", "filter_ms=", "claude_ms=", "total_ms=",
+                 "deals_sent=1", "input_tokens=3754", "output_tokens=900", "outcome=ok"):
+        assert part in line
+    assert "pipeline_ms=" not in line  # data was fresh, so no scrape ran

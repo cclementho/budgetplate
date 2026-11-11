@@ -1,16 +1,39 @@
 """Budget-mode endpoint: build a weekly basket from a store's deals + preferences."""
 
+import logging
 import re
+import time
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan
-from ai.client import ClaudeResponseError
+from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
 
 router = APIRouter()
+logger = logging.getLogger("budgetplate.budget")
+
+
+class _Stopwatch:
+    """Collects per-stage durations in milliseconds for one request."""
+
+    def __init__(self):
+        self.started = time.perf_counter()
+        self.stages: dict[str, int] = {}
+
+    def time(self, name: str, fn, *args, **kwargs):
+        t0 = time.perf_counter()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            self.stages[name] = round((time.perf_counter() - t0) * 1000)
+
+    def summary(self) -> str:
+        total = round((time.perf_counter() - self.started) * 1000)
+        parts = [f"{k}={v}" for k, v in self.stages.items()]
+        return " ".join(parts + [f"total_ms={total}"])
 
 # Shown to the shopper (the frontend displays the response's "detail") when
 # Claude's reply is cut off, empty, refused or not valid JSON.
@@ -108,38 +131,55 @@ def budget_plan(profile: BudgetProfile) -> dict:
     over budget) a swap suggestion.
     """
     postal_code = profile.postal_code.replace(" ", "").upper()
-
-    if not has_fresh_data(postal_code):
-        run_pipeline(postal_code)
-
-    deals = get_items(postal_code, merchant=profile.merchant)
-    if not deals:
-        return {
-            "postal_code": postal_code,
-            "merchant": profile.merchant,
-            "plan": None,
-            "message": "No deals found at this store this week.",
-        }
-
-    filtered, skipped_pantry = _filter_deals(
-        deals, profile.restriction, profile.pantry
-    )
-
+    watch = _Stopwatch()
+    deals_sent = 0
+    outcome = "ok"
     try:
-        plan = generate_budget_plan(
-            {
-                "budget": profile.budget,
-                "people": profile.people,
-                "cuisines": profile.cuisines,
-                "restriction": profile.restriction,
-                "pantry": profile.pantry,
+        if not watch.time("fresh_check_ms", has_fresh_data, postal_code):
+            watch.time("pipeline_ms", run_pipeline, postal_code)
+
+        deals = watch.time("get_items_ms", get_items, postal_code, merchant=profile.merchant)
+        if not deals:
+            outcome = "no_deals"
+            return {
+                "postal_code": postal_code,
                 "merchant": profile.merchant,
-            },
-            filtered,
+                "plan": None,
+                "message": "No deals found at this store this week.",
+            }
+
+        filtered, skipped_pantry = watch.time(
+            "filter_ms", _filter_deals, deals, profile.restriction, profile.pantry
         )
-    except ClaudeResponseError:
-        # Already logged with stop_reason and token counts in ai.client.
-        raise HTTPException(status_code=502, detail=PLAN_FAILED_MESSAGE)
+        deals_sent = len(filtered)
+
+        try:
+            plan = watch.time(
+                "claude_ms",
+                generate_budget_plan,
+                {
+                    "budget": profile.budget,
+                    "people": profile.people,
+                    "cuisines": profile.cuisines,
+                    "restriction": profile.restriction,
+                    "pantry": profile.pantry,
+                    "merchant": profile.merchant,
+                },
+                filtered,
+            )
+        except ClaudeResponseError as exc:
+            # Already logged with stop_reason and token counts in ai.client.
+            outcome = f"claude_{exc.reason}"
+            raise HTTPException(status_code=502, detail=PLAN_FAILED_MESSAGE)
+    finally:
+        # One line per request so Render logs show where the time went.
+        stats = last_call_stats() if "claude_ms" in watch.stages else {}
+        logger.info(
+            "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_sent=%d "
+            "model=%s input_tokens=%s output_tokens=%s",
+            postal_code, profile.merchant, outcome, watch.summary(), deals_sent,
+            stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
+        )
 
     # Recompute the total from the basket subtotals so the budget verdict is
     # correct even if the model's arithmetic drifts.
