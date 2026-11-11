@@ -67,23 +67,93 @@ _RESTRICTION_CATEGORY_BLOCK = {
 }
 
 
-def _pantry_pattern(pantry: list[str]) -> re.Pattern | None:
-    """Compile a word-boundary regex matching any pantry term.
+# --- "already at home" matching ------------------------------------------------
+#
+# A deal is left out only when the pantry term is what the product IS, not
+# merely a word in its name: "Gold Seal Butter" is butter, "Danish Butter
+# Cookies" and "Peanut Butter" are not. A product is named by its last words
+# ("Chalo! Basmati Rice" is rice; "Rice Vinegar" is vinegar), so the rule is:
+# one of the listing's alternatives must END with the term.
 
-    Word boundaries keep "rice" from matching "price" and "oil" from matching
-    "broil", which plain substring matching would get wrong.
+# Size and marketing text that can follow the product's real name.
+_SIZE_RE = re.compile(
+    r"\b\d+(?:\.\d+)?(?:\s*[-/x]\s*\d+(?:\.\d+)?)?\s*"
+    r"(?:kg|g|ml|l|lb|lbs|oz|pk|pack|'s|ct|m)\b|\b\d+(?:\.\d+)?%",
+    re.IGNORECASE,
+)
+_TRAILER_RE = re.compile(
+    r"\b(?:product of|selected variet|any variet|assorted variet).*$", re.IGNORECASE
+)
+# Words describing the form a product comes in; they can follow its name
+# without changing what it is ("Butter Sticks" is butter).
+_FORM_WORDS = {"stick", "block", "brick", "tub", "salted", "unsalted"}
+
+# "X <term>" products that are a different thing from the term on its own.
+_DIFFERENT_PRODUCT = {
+    "butter": {"peanut", "almond", "cashew", "nut", "seed", "sunflower", "apple", "cocoa", "shea",
+               "not"},
+    "sugar": {"zero", "no", "reduced", "less", "low"},  # "Ketchup Zero Sugar" isn't sugar
+    "milk": {"coconut", "almond", "oat", "soy", "chocolate", "condensed", "evaporated"},
+    "rice": {"fried", "cauliflower"},
+    "egg": {"chocolate", "easter", "mini", "creme"},
+    "onion": {"green"},
+    "bread": {"garlic", "banana"},
+}
+
+# Staples whose label on the form isn't the word printed on the product.
+_PANTRY_ALIASES = {
+    "cooking oil": ["canola oil", "vegetable oil", "sunflower oil", "corn oil"],
+}
+
+
+def _singular(word: str) -> str:
+    if word.endswith("oes"):
+        return word[:-2]  # potatoes, tomatoes
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"  # berries
+    if word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _name_words(text: str) -> list[str]:
+    return [_singular(w) for w in re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))]
+
+
+def _pantry_terms(pantry: list[str]) -> list[list[str]]:
+    """Each pantry entry (and its aliases) as a list of singular words."""
+    terms = []
+    for entry in pantry:
+        entry = (entry or "").strip().lower()
+        if not entry:
+            continue
+        for phrase in [entry, *_PANTRY_ALIASES.get(entry, [])]:
+            words = _name_words(phrase)
+            if words and words not in terms:
+                terms.append(words)
+    return terms
+
+
+def _is_pantry_item(name: str, terms: list[list[str]]) -> bool:
+    """True when one alternative in the listing ends with a pantry term.
+
+    Flyer names bundle alternatives ("White or Whole Wheat Bread 675 G or
+    Buns"), so each comma- or "or"-separated part is checked on its own.
     """
-    terms = sorted(
-        {t.strip() for t in pantry if t and t.strip()},
-        key=len,
-        reverse=True,  # longest first so "soy sauce" wins over "soy"
-    )
-    if not terms:
-        return None
-    return re.compile(
-        r"\b(?:" + "|".join(re.escape(t) for t in terms) + r")\b",
-        re.IGNORECASE,
-    )
+    text = _SIZE_RE.sub(" ", _TRAILER_RE.sub("", name or ""))
+    for part in re.split(r",|\bor\b", text, flags=re.IGNORECASE):
+        words = _name_words(part)
+        while words and words[-1] in _FORM_WORDS:
+            words.pop()
+        for term in terms:
+            n = len(term)
+            if len(words) < n or words[-n:] != term:
+                continue
+            before = words[-n - 1] if len(words) > n else None
+            if before in _DIFFERENT_PRODUCT.get(term[-1], set()):
+                continue  # e.g. "peanut butter" when the shopper has butter
+            return True
+    return False
 
 
 def _filter_deals(
@@ -97,12 +167,13 @@ def _filter_deals(
     in "Other").
 
     Pantry items are removed so Claude can't spend budget on something the
-    shopper already owns. Returns ``(kept_deals, skipped_names)`` — the skipped
+    shopper already owns. Only deals that ARE the pantry item go: having
+    butter at home doesn't hide butter cookies or peanut butter. Returns ``(kept_deals, skipped_names)`` — the skipped
     names let the UI confirm what was left out.
     """
     blocked = {"Household"}
     blocked |= _RESTRICTION_CATEGORY_BLOCK.get(restriction or "", set())
-    pantry_re = _pantry_pattern(pantry)
+    terms = _pantry_terms(pantry)
 
     kept: list[dict] = []
     skipped: list[str] = []
@@ -110,7 +181,7 @@ def _filter_deals(
         if d.get("category") in blocked:
             continue
         name = d.get("clean_name") or ""
-        if pantry_re is not None and pantry_re.search(name):
+        if terms and _is_pantry_item(name, terms):
             skipped.append(name)
             continue
         kept.append(d)

@@ -171,10 +171,10 @@ export default function BudgetShop({ result, budget }) {
           {skippedPantry.length > 0 && (
             <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
               <span className="font-semibold text-ink">
-                Skipped {skippedPantry.length}{" "}
-                {skippedPantry.length === 1 ? "deal" : "deals"}
+                Left out {skippedPantry.length}{" "}
+                {skippedPantry.length === 1 ? "item" : "items"}
               </span>{" "}
-              you already have at home: {skippedPantry.slice(0, 4).join(", ")}
+              you already have: {skippedPantry.slice(0, 4).join(", ")}
               {skippedPantry.length > 4 &&
                 ` +${skippedPantry.length - 4} more`}
             </p>
