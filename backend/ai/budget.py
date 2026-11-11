@@ -8,6 +8,7 @@ same style.
 """
 
 from ai.client import call_claude_json
+from config import settings
 
 # Basket groups used by the printable shopping list (Section 4).
 GROUPS = ["Proteins", "Produce", "Grains & Pantry", "Other"]
@@ -104,9 +105,10 @@ def _fmt(value) -> str:
     return "n/a" if value is None else f"{float(value):.2f}"
 
 
-# Output cap for the plan. Shared with scripts/compare_budget_models.py so the
-# comparison sends exactly what production sends.
-MAX_TOKENS = 16_000
+# Output cap for the plan (4,096 unless CLAUDE_MAX_TOKENS overrides it). Shared
+# with scripts/compare_budget_models.py so the comparison sends exactly what
+# production sends.
+MAX_TOKENS = settings.CLAUDE_MAX_TOKENS
 
 
 def build_budget_prompt(profile: dict, deals: list[dict]) -> str:

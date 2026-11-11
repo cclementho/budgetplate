@@ -44,14 +44,33 @@ def claude(monkeypatch):
     return fake
 
 
-def test_meal_plans_use_haiku_5_5_with_room_to_think_and_no_effort_setting(claude):
+def test_meal_plans_use_haiku_4_5_at_4096_tokens_with_no_effort_setting(claude):
     assert generate_budget_plan({"budget": 40, "people": 1, "merchant": "No Frills"}, []) == {
         "basket": [], "estimated_total": 0, "swap_suggestion": None, "meals": []}
     (sent,) = claude.requests
-    assert settings.CLAUDE_MODEL == "claude-haiku-5-5"
-    assert sent["model"] == "claude-haiku-5-5"
-    assert sent["max_tokens"] == 16_000
+    assert settings.CLAUDE_MODEL == "claude-haiku-4-5"
+    assert sent["model"] == "claude-haiku-4-5"
+    assert sent["max_tokens"] == 4096
     assert "output_config" not in sent and "extra_body" not in sent and "thinking" not in sent
+
+
+def test_model_and_token_cap_can_be_overridden_from_the_environment(monkeypatch):
+    import importlib
+
+    import config
+
+    monkeypatch.setenv("CLAUDE_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("CLAUDE_MAX_TOKENS", "16000")
+    try:
+        fresh = importlib.reload(config).settings
+        assert (fresh.CLAUDE_MODEL, fresh.CLAUDE_MAX_TOKENS) == ("claude-haiku-5-5", 16000)
+        monkeypatch.setenv("CLAUDE_MODEL", "")  # blank means "use the default"
+        monkeypatch.delenv("CLAUDE_MAX_TOKENS")
+        fresh = importlib.reload(config).settings
+        assert (fresh.CLAUDE_MODEL, fresh.CLAUDE_MAX_TOKENS) == ("claude-haiku-4-5", 4096)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
 
 
 def test_thinking_blocks_before_the_answer_are_ignored(claude):

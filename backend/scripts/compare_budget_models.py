@@ -59,8 +59,9 @@ RUNS_DIR = os.path.join(OUT_DIR, "runs")
 OFFLINE_CHARS_PER_TOKEN = 1.5
 
 # Each arm is one request setup, pinned to the values that were tested.
-# "haiku-4.5" is what production sent before the switch (4,096-token cap);
-# "haiku-5.5-16k" matches production since then (config.CLAUDE_MODEL, ai.budget.MAX_TOKENS).
+# "haiku-4.5" (4,096-token cap) and "haiku-5.5-16k" are the two setups production
+# has used. The compare command reads the live setup from config.CLAUDE_MODEL and
+# ai.budget.MAX_TOKENS instead of these.
 ARMS = {
     "haiku-4.5": {"model": "claude-haiku-4-5", "max_tokens": 4096, "effort": None},
     "haiku-5.5": {"model": "claude-haiku-5-5", "max_tokens": 4096, "effort": None},

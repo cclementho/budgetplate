@@ -21,7 +21,12 @@ class Settings:
 
     # Claude Haiku is only called for /api/budget-plan (weekly basket + meal
     # ideas). Scraping/parsing is pure Python — no AI involved.
-    CLAUDE_MODEL: str = "claude-haiku-5-5"
+    # Both can be overridden from the environment (e.g. the Render dashboard)
+    # to switch models without a deploy. Newer Haiku models think before they
+    # answer and that thinking counts toward the output cap: claude-haiku-5-5
+    # needs CLAUDE_MAX_TOKENS=16000 (a 4,096 cap cut off 7 of 10 test plans).
+    CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL") or "claude-haiku-4-5"
+    CLAUDE_MAX_TOKENS: int = int(os.getenv("CLAUDE_MAX_TOKENS") or 4096)
 
     # Cache window: re-use scraped data younger than this many hours.
     CACHE_HOURS: int = 24
