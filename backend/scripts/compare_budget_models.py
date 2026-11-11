@@ -402,7 +402,8 @@ def match_deal(item: dict, store_deals: list[dict]) -> tuple[dict | None, str]:
     # Plans priced by ai.budget.finalize_plan carry the flyer's own name.
     name = norm(item.get("deal_name") or item.get("name", ""))
     try:
-        price = round(float(item.get("price")), 2)
+        # Sold by weight: the plan carries the per-kg rate; the flyer price is separate.
+        price = round(float(item.get("listed_price") or item.get("price")), 2)
     except (TypeError, ValueError):
         price = None
     same_name = [d for d in store_deals if norm(d["clean_name"]) == name]

@@ -164,6 +164,77 @@ def categorize(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Sold by weight ("$2.00/lb")
+# ---------------------------------------------------------------------------
+
+_LB_IN_KG = 0.45359237
+
+# Meat, seafood and produce keywords, tolerant of plurals ("Peppers"), used to
+# decide which items are worth a price-unit lookup.
+_WEIGHED_RE = re.compile(
+    r"\b(?:"
+    + "|".join(
+        re.escape(kw)
+        for category, keywords in CATEGORY_KEYWORDS
+        if category in ("Meat & Seafood", "Produce")
+        for kw in keywords
+    )
+    + r"|roast|chop|loin|wing|cutlet|fillet|squash|bean|sprout|yam|radish|choy|choi)(?:e?s)?\b",
+    re.IGNORECASE,
+)
+_PER_KG_RE = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*/\s*kg\b", re.IGNORECASE)
+_UNIT_RE = re.compile(r"(?<![a-z])(lbs?|kg|100\s*g)(?![a-z])")
+
+
+def may_be_sold_by_weight(name: str) -> bool:
+    """True for meat, seafood and produce with no pack size in the name.
+
+    These are the listings where a flyer price is often per lb or per kg.
+    Only they get a price-unit lookup when scraping.
+    """
+    weight_kg, _, count = extract_weight(name or "")
+    if weight_kg is not None or count is not None:
+        return False
+    return bool(_WEIGHED_RE.search(name or ""))
+
+
+def price_unit(price: float | None, price_text, name: str = "", description=None):
+    """Work out whether ``price`` is per lb, kg or 100 g.
+
+    Returns ``(priced_per, price_per_kg)``; both None when the item is priced
+    each. Uses Flipp's ``price_text`` ("lb", "/lb", "/kg") when present. A
+    per-kg figure printed in the description or the name ("13.21/kg") is used
+    as the per-kg price, and can identify the unit by itself: $5.99 next to
+    13.21/kg can only be a per-lb price.
+    """
+    if not price:
+        return None, None
+    text = str(price_text or "").lower()
+    priced_per = None
+    if text and "ea" not in text:  # "ea./lb" lists two products: ambiguous
+        match = _UNIT_RE.search(text)
+        if match:
+            unit = match.group(1)
+            priced_per = "lb" if unit.startswith("lb") else "kg" if unit == "kg" else "100g"
+
+    factor = {"lb": 1 / _LB_IN_KG, "kg": 1.0, "100g": 10.0}
+    printed = None
+    for source in (description, name):
+        found = _PER_KG_RE.search(str(source or ""))
+        if found:
+            printed = float(found.group(1))
+            break
+    if printed and "ea" not in text:
+        for unit, multiple in factor.items():
+            if abs(printed / price - multiple) <= 0.02 * multiple:
+                if priced_per in (None, unit):
+                    return unit, round(printed, 2)
+    if priced_per is None:
+        return None, None
+    return priced_per, round(price * factor[priced_per], 2)
+
+
+# ---------------------------------------------------------------------------
 # Name cleaning
 # ---------------------------------------------------------------------------
 
@@ -235,6 +306,7 @@ def parse_item(raw: dict) -> dict:
     """Parse one raw flyer item into the cleaned record the DB stores.
 
     Pricing rules:
+    - sold by weight    -> priced_per = lb | kg | 100g; price_per_kg from that
     - weight parseable  -> price_per_kg = price / weight_kg
     - counted pack      -> price_per_unit = price / count
     - neither           -> sold per unit; price_per_unit = listed price
@@ -244,10 +316,19 @@ def parse_item(raw: dict) -> dict:
 
     weight_kg, unit, count = extract_weight(name)
 
+    priced_per, per_kg_by_weight = price_unit(
+        price, raw.get("price_text"), name, raw.get("description")
+    )
+
     price_per_kg = None
     price_per_unit = None
     if price is not None:
-        if weight_kg:
+        if priced_per:
+            # "$2.00/lb" is a rate, not the cost of an item; any size in the
+            # name ("5-11 kg" turkeys) is the range it comes in, not a pack.
+            price_per_kg = per_kg_by_weight
+            weight_kg = unit = None
+        elif weight_kg:
             price_per_kg = round(price / weight_kg, 2)
         elif count:
             price_per_unit = round(price / count, 2)
@@ -265,6 +346,7 @@ def parse_item(raw: dict) -> dict:
         "weight_kg": weight_kg,
         "pack_count": count,  # e.g. 12 for "12 pack" / "12's"
         "size_unit": unit,  # unit as printed: g, kg, ml, l, lb, lbs
+        "priced_per": priced_per,  # lb | kg | 100g when sold by weight, else None
         "flyer_id": raw.get("flyer_id"),
         "valid_from": raw.get("valid_from") or None,
         "valid_to": raw.get("valid_to") or None,

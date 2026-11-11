@@ -17,6 +17,10 @@ const GROUP_ORDER = [
 // "2", "1.5": how many of a listing to buy, without trailing zeros.
 const qty = (v) => (v == null ? "1" : String(Number(Number(v).toFixed(2))));
 
+// "x2" for packs, "1.5 kg" for items sold by weight.
+const amount = (it) =>
+  it.sold_by_weight ? `${qty(it.quantity)} kg` : `x${qty(it.quantity)}`;
+
 // Sections 2-4 of the results page:
 //   2. Your weekly basket (hero) — items, running total, budget verdict, swap
 //   3. What you can make — cuisine-matched meals
@@ -67,7 +71,9 @@ export default function BudgetShop({ result, budget }) {
     grouped.forEach(({ group, items }) => {
       lines.push(group.toUpperCase());
       items.forEach((it) =>
-        lines.push(`  - ${it.name} (x${qty(it.quantity)}): ${money(it.subtotal)}`)
+        lines.push(
+          `  - ${it.name} (${amount(it)}): ${money(it.subtotal)}`
+        )
       );
       lines.push("");
     });
@@ -109,7 +115,11 @@ export default function BudgetShop({ result, budget }) {
               <div className="min-w-0">
                 <p className="font-bold text-ink">{it.name}</p>
                 <p className="tnum text-sm text-muted">
-                  {qty(it.quantity)} × {money(it.price)}
+                  {it.sold_by_weight
+                    ? `${qty(it.quantity)} kg × ${money(it.price)}/kg (${money(
+                        it.listed_price
+                      )}/${it.priced_per} on the flyer)`
+                    : `${qty(it.quantity)} × ${money(it.price)}`}
                 </p>
                 <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>
@@ -294,7 +304,7 @@ export default function BudgetShop({ result, budget }) {
                     <span className="text-ink">
                       {it.name}{" "}
                       <span className="text-muted">
-                        · x{qty(it.quantity)}
+                        · {amount(it)}
                       </span>
                     </span>
                     <span className="tnum font-bold text-ink">

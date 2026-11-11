@@ -67,6 +67,7 @@ THE GOAL
   if a meal makes 4 servings, buy enough protein and vegetables for 4 portions.
 
 DEALS ON SALE THIS WEEK AT {merchant} (each line is "ID | NAME | $PRICE | $PER_KG | CATEGORY"):
+Lines marked "sold by weight" are priced per lb or kg, not per item: you choose how much to buy.
 {deals}
 
 Return ONLY valid JSON in exactly this schema:
@@ -75,7 +76,7 @@ Return ONLY valid JSON in exactly this schema:
     {{
       "id": <the deal's ID number from the list>,
       "name": "<short everyday name for it, e.g. 'Chicken thighs'>",
-      "quantity": <how many of this listing to buy, a number>,
+      "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>,
       "why": "<under 12 words, friendly, e.g. 'cheapest protein this week'>"
     }}
   ],
@@ -126,6 +127,8 @@ OTHER RULES
 - Respect the dietary restriction strictly (e.g. Halal = no pork or alcohol,
   Gluten-free = avoid wheat/barley, Vegetarian/Vegan = no meat/seafood, Vegan
   also no dairy or eggs).
+- For "sold by weight" deals, buy a realistic weight for the servings (roughly
+  150 to 200 g of meat per serving); the cost is its $/kg price times the kg.
 - The basket total is each item's price times its quantity. Keep it at or
   under the budget. Only if a sensible week truly cannot fit, return the
   closest basket and set "swap_suggestion"; otherwise set it to null.
@@ -156,8 +159,22 @@ def _appliances(profile: dict) -> list[str]:
     return [a for a in APPLIANCES if a in chosen] or list(DEFAULT_APPLIANCES)
 
 
+def _sold_by_weight(deal: dict) -> bool:
+    return bool(deal.get("priced_per")) and _number(deal.get("price_per_kg")) is not None
+
+
 def deal_line(deal_id: int, deal: dict) -> str:
-    """One deal as the model sees it: 'ID | NAME | $PRICE | $PER_KG | CATEGORY'."""
+    """One deal as the model sees it: 'ID | NAME | $PRICE | $PER_KG | CATEGORY'.
+
+    A per-weight price is spelled out ("$2.00/lb, sold by weight") so it isn't
+    mistaken for the cost of one item.
+    """
+    if _sold_by_weight(deal):
+        return (
+            f"{deal_id} | {deal.get('clean_name', '')} | "
+            f"${_fmt(deal.get('price'))}/{deal['priced_per']}, sold by weight | "
+            f"${_fmt(deal.get('price_per_kg'))}/kg | {deal.get('category', '')}"
+        )
     return (
         f"{deal_id} | {deal.get('clean_name', '')} | ${_fmt(deal.get('price'))} | "
         f"${_fmt(deal.get('price_per_kg'))}/kg | {deal.get('category', '')}"
@@ -222,7 +239,9 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             continue
         deal_id = int(deal_id)
         deal = deals[deal_id - 1]
-        price = _number(deal.get("price"))
+        by_weight = _sold_by_weight(deal)
+        # Sold by weight: the quantity is kilograms, so the price is per kg.
+        price = _number(deal.get("price_per_kg") if by_weight else deal.get("price"))
         quantity = _number(entry.get("quantity"), 1.0)
         if price is None or quantity is None or quantity <= 0:
             invalid += 1
@@ -239,6 +258,11 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             "quantity": quantity,
             "why": str(entry.get("why") or "").strip(),
             "group": _BUCKET_GROUP.get(bucket, "Other"),
+            # For by-weight items "price" is per kg and "quantity" is kg;
+            # "listed_price" is what the flyer shows (e.g. 2.00 per lb).
+            "sold_by_weight": by_weight,
+            "priced_per": deal.get("priced_per") if by_weight else None,
+            "listed_price": _number(deal.get("price")) if by_weight else None,
         }
 
     basket = []
