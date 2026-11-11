@@ -56,9 +56,10 @@ def stores(
     timing = result.get("timing", {})
     # One line per request so Render logs show where the time went.
     logger.info(
-        "stores timing: postal=%s nominatim_ms=%s overpass_ms=%s deal_counts_ms=%d "
+        "stores timing: postal=%s cache=%s nominatim_ms=%s overpass_ms=%s deal_counts_ms=%d "
         "total_ms=%d stores=%d",
-        postal_code, timing.get("geocode_ms"), timing.get("overpass_ms"), counts_ms,
+        postal_code, timing.get("cache"), timing.get("geocode_ms"), timing.get("overpass_ms"),
+        counts_ms,
         round((time.perf_counter() - started) * 1000), len(result["stores"]),
     )
 

@@ -16,10 +16,12 @@ store far away — the core BudgetPlate differentiator.
 import logging
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
 from config import settings
+from location.cache import get_cached_lookup, save_lookup
 
 logger = logging.getLogger("budgetplate.stores")
 
@@ -42,7 +44,12 @@ USER_AGENT = "BudgetPlate/1.0 (grocery price comparison; contact: budgetplate.ap
 WALK_SPEED_KMH = 5.0  # assumed walking speed
 RADIUS_PRIMARY_M = 5000  # 5km
 RADIUS_FALLBACK_M = 10000  # 10km fallback if the primary search is empty
-REQUEST_TIMEOUT = 30
+# Geocoding calls get this long. Results are cached for 30 days, so a slow
+# lookup is rare and not worth making the shopper wait half a minute for.
+REQUEST_TIMEOUT = 10
+# Overpass gets longer: the mirrors are asked in parallel, so this is the most
+# a lookup waits in total, and a healthy mirror can need 15+ seconds.
+OVERPASS_TIMEOUT = 20
 
 # Rough relative price index per supported chain (1.0 = cheapest baseline).
 # No Frills / FreshCo are discount banners; Loblaws is a full-service banner.
@@ -194,16 +201,45 @@ def _format_address(tags: dict) -> str | None:
     return ", ".join(parts) if parts else None
 
 
-def _query_overpass(lat: float, lng: float, radius_m: int) -> list[dict]:
+def _ask_overpass(endpoint: str, query: str) -> list[dict] | None:
+    """One mirror's answer: a list of elements, or None if it failed.
+
+    A rate-limited mirror returns HTTP 200 with an empty body and a
+    ``remark``; that is a failure, not "no stores here".
+    """
+    try:
+        resp = requests.post(
+            endpoint,
+            data={"data": query},
+            headers={"User-Agent": USER_AGENT},
+            timeout=OVERPASS_TIMEOUT,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        logger.info("Overpass endpoint failed (%s): %s", endpoint, type(exc).__name__)
+        return None
+    elements = payload.get("elements", [])
+    if not elements and payload.get("remark"):
+        logger.info("Overpass remark from %s: %s", endpoint, payload["remark"])
+        return None
+    return elements
+
+
+def _query_overpass(lat: float, lng: float, radius_m: int) -> list[dict] | None:
     """Fetch supermarkets, grocery, and convenience stores within a radius.
 
-    Uses ``nwr`` so nodes, ways, and relations are all covered, and rotates
-    across mirrors: a rate-limited mirror returns HTTP 200 with an empty body
-    and a ``remark``, so we move on to the next one rather than treating that
-    as "no stores".
+    Returns the elements, ``[]`` when there genuinely are none, or ``None``
+    when every mirror failed. Uses ``nwr`` so nodes, ways, and relations are
+    all covered.
+
+    The public mirrors are often overloaded or slow (one can reject at once
+    while another hangs), so all of them are asked at the same time and the
+    first real answer wins. Trying them one after another made a lookup wait
+    for each failure in turn.
     """
     query = f"""
-    [out:json][timeout:25];
+    [out:json][timeout:{OVERPASS_TIMEOUT}];
     (
       nwr["shop"="supermarket"](around:{radius_m},{lat},{lng});
       nwr["shop"="grocery"](around:{radius_m},{lat},{lng});
@@ -211,35 +247,22 @@ def _query_overpass(lat: float, lng: float, radius_m: int) -> list[dict]:
     );
     out center tags;
     """
-    for endpoint in OVERPASS_ENDPOINTS:
-        try:
-            resp = requests.post(
-                endpoint,
-                data={"data": query},
-                headers={"User-Agent": USER_AGENT},
-                timeout=REQUEST_TIMEOUT,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-        except (requests.RequestException, ValueError):
-            logger.info("Overpass endpoint failed (%s); trying next", endpoint)
-            continue
-
-        elements = payload.get("elements", [])
-        if elements:
-            return elements
-        # Empty body with a remark => rate limit / timeout, not "no results".
-        if payload.get("remark"):
-            logger.info(
-                "Overpass remark from %s: %s; trying next mirror",
-                endpoint,
-                payload["remark"],
-            )
-            continue
-        return []  # genuine empty result
-
-    logger.info("All Overpass mirrors failed/empty for radius %dm", radius_m)
-    return []
+    pool = ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS))
+    try:
+        pending = [pool.submit(_ask_overpass, endpoint, query) for endpoint in OVERPASS_ENDPOINTS]
+        answer = None
+        for future in as_completed(pending):
+            elements = future.result()
+            if elements:
+                return elements       # a mirror with data: done
+            if elements == []:
+                answer = []           # a clean "nothing here"; keep it unless another has data
+        if answer is None:
+            logger.info("All Overpass mirrors failed for radius %dm", radius_m)
+        return answer
+    finally:
+        # Don't wait for slower mirrors once there's an answer.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _parse_elements(
@@ -337,9 +360,15 @@ def _match_supported(parsed: list[dict], deal_counts: dict) -> list[dict]:
 
 def _search_radius(
     lat: float, lng: float, radius_m: int, postal_code: str
-) -> list[dict]:
-    """Query Overpass at a radius and log the store names it returns."""
-    parsed = _parse_elements(_query_overpass(lat, lng, radius_m), lat, lng)
+) -> list[dict] | None:
+    """Query Overpass at a radius and log the store names it returns.
+
+    Returns None when every mirror failed (as opposed to finding no stores).
+    """
+    elements = _query_overpass(lat, lng, radius_m)
+    if elements is None:
+        return None
+    parsed = _parse_elements(elements, lat, lng)
     logger.info(
         "Overpass returned %d stores within %dm for %s: %s",
         len(parsed),
@@ -350,57 +379,81 @@ def _search_radius(
     return parsed
 
 
+def lookup_nearby(postal_code: str) -> tuple[dict | None, dict]:
+    """Geocode a postal code and list the grocery stores around it.
+
+    This is the slow part (Nominatim + Overpass) and the part that is cached.
+    Returns ``(lookup, timing)`` where lookup is ``{"lat", "lng", "entries"}``
+    or None when the postal code can't be geocoded. Searches 5km first, then
+    widens to 10km if no supported chain turned up (a supported store may sit
+    in the 5-10km ring even when closer non-supported ones exist).
+    """
+    t0 = time.perf_counter()
+    coords = geocode_postal_code(postal_code)
+    timing = {"geocode_ms": round((time.perf_counter() - t0) * 1000), "overpass_ms": 0}
+    if coords is None:
+        logger.info("Could not geocode postal code %s", postal_code)
+        return None, timing
+    lat, lng = coords
+
+    t0 = time.perf_counter()
+    try:
+        parsed = _search_radius(lat, lng, RADIUS_PRIMARY_M, postal_code)
+        # Widen only when the 5km search worked and found no supported chain;
+        # if Overpass is down, a second search would just double the wait.
+        if parsed is not None and not any(e["merchant"] for e in parsed):
+            logger.info(
+                "No supported store within %dm of %s; widening to %dm",
+                RADIUS_PRIMARY_M, postal_code, RADIUS_FALLBACK_M,
+            )
+            parsed = _search_radius(lat, lng, RADIUS_FALLBACK_M, postal_code)
+        parsed = parsed or []
+    finally:
+        timing["overpass_ms"] = round((time.perf_counter() - t0) * 1000)
+
+    # Keep only what a result can use: supported chains and real grocery
+    # stores (convenience stores only matter for chain matching).
+    entries = [e for e in parsed if e["merchant"] or e["shop"] in GROCERY_SHOP_TYPES]
+    return {"lat": lat, "lng": lng, "entries": entries}, timing
+
+
 def find_stores(postal_code: str, deal_counts: dict | None = None) -> dict:
     """Find grocery stores near a postal code.
 
-    Returns ``{"stores": [...], "note": str | None}``:
-      - Searches 5km first, then widens to 10km if no supported chain is found
-        (this also covers the case where the 5km query returns nothing).
+    Returns ``{"stores": [...], "note": str | None, "timing": {...}}``:
       - If any supported chain is within range, ``stores`` holds those
         (ranked by composite score) and ``note`` is None.
       - Otherwise ``stores`` holds ALL grocery stores within 10km (ranked by
         distance, each flagged ``supported: False``) and ``note`` explains that
         deal data is limited to the four supported chains.
 
+    The geocode and store list come from a 30-day Postgres cache when
+    possible; ``deal_counts`` are applied fresh on every call. Lookups that
+    find nothing are not cached, since that is usually an outage.
+
     Each store dict contains: name, merchant, lat, lng, distance_km,
     walk_minutes, band, price_index, deals_count, score, supported.
     """
     deal_counts = deal_counts or {}
-    t0 = time.perf_counter()
-    coords = geocode_postal_code(postal_code)
-    geocode_ms = round((time.perf_counter() - t0) * 1000)
-    if coords is None:
-        logger.info("Could not geocode postal code %s (geocode_ms=%d)", postal_code, geocode_ms)
-        return {"stores": [], "note": None, "timing": {"geocode_ms": geocode_ms, "overpass_ms": 0}}
-    lat, lng = coords
+    lookup = get_cached_lookup(postal_code)
+    if lookup is not None:
+        timing = {"geocode_ms": 0, "overpass_ms": 0, "cache": "hit"}
+    else:
+        lookup, timing = lookup_nearby(postal_code)
+        timing["cache"] = "miss"
+        if lookup is None:
+            return {"stores": [], "note": None, "timing": timing}
+        if lookup["entries"]:
+            save_lookup(postal_code, lookup["lat"], lookup["lng"], lookup["entries"])
 
-    t0 = time.perf_counter()
-    try:
-        result = _find_near(lat, lng, postal_code, deal_counts)
-    finally:
-        overpass_ms = round((time.perf_counter() - t0) * 1000)
-    result["timing"] = {"geocode_ms": geocode_ms, "overpass_ms": overpass_ms}
+    result = _build_result(lookup["entries"], deal_counts, postal_code)
+    result["timing"] = timing
     return result
 
 
-def _find_near(lat: float, lng: float, postal_code: str, deal_counts: dict) -> dict:
-    """Overpass search around a point (5km, then 10km), matched to chains."""
-    # 1. Primary 5km search.
-    parsed = _search_radius(lat, lng, RADIUS_PRIMARY_M, postal_code)
+def _build_result(parsed: list[dict], deal_counts: dict, postal_code: str) -> dict:
+    """Turn nearby stores into the API result, with this week's deal counts."""
     supported = _match_supported(parsed, deal_counts)
-
-    # 2. Widen to 10km if no supported chain turned up within 5km (a supported
-    #    store may sit in the 5-10km ring even when closer non-supported ones
-    #    exist, so we can't gate this on the 5km result being empty).
-    if not supported:
-        logger.info(
-            "No supported store within %dm of %s; widening to %dm",
-            RADIUS_PRIMARY_M,
-            postal_code,
-            RADIUS_FALLBACK_M,
-        )
-        parsed = _search_radius(lat, lng, RADIUS_FALLBACK_M, postal_code)
-        supported = _match_supported(parsed, deal_counts)
 
     if supported:
         logger.info(
@@ -411,8 +464,8 @@ def _find_near(lat: float, lng: float, postal_code: str, deal_counts: dict) -> d
         )
         return {"stores": supported, "note": None}
 
-    # 3. Fallback: no supported chain within 10km — list ALL grocery stores
-    #    within 10km so the user still sees what's around them.
+    # Fallback: no supported chain within 10km. List ALL grocery stores
+    # within 10km so the user still sees what's around them.
     logger.info(
         "No supported stores within %dm of %s; listing all grocery stores",
         RADIUS_FALLBACK_M,
