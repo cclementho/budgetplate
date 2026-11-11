@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { fadeUp, item, press, stagger } from "../motion.js";
 import { Bulb, Check, Copy, Sparkles } from "./icons.jsx";
 
-const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
+const money = (v) => (v == null ? "n/a" : `$${Number(v).toFixed(2)}`);
 
 // Printable shopping list is grouped in this fixed order (Section 4).
 const GROUP_ORDER = [
@@ -28,6 +28,10 @@ const amount = (it) =>
 // Presentational only; receives the /budget-plan response as `result`.
 export default function BudgetShop({ result, budget }) {
   const [copied, setCopied] = useState(false);
+  // Shopping-list rows the shopper has ticked off (keyed by deal).
+  const [checked, setChecked] = useState({});
+  const toggleChecked = (key) =>
+    setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const plan = result?.plan;
   const basket = plan?.basket || [];
@@ -67,12 +71,12 @@ export default function BudgetShop({ result, budget }) {
     budget > 0 ? Math.min((Number(total) / budget) * 100, 100) : 0;
 
   function copyList() {
-    const lines = ["BudgetPlate — this week's shopping list", ""];
+    const lines = ["BudgetPlate: this week's shopping list", ""];
     grouped.forEach(({ group, items }) => {
       lines.push(group.toUpperCase());
       items.forEach((it) =>
         lines.push(
-          `  - ${it.name} (${amount(it)}): ${money(it.subtotal)}`
+          `  [ ] ${it.name} (${amount(it)}): ${money(it.subtotal)}`
         )
       );
       lines.push("");
@@ -291,28 +295,45 @@ export default function BudgetShop({ result, budget }) {
           </motion.button>
         </div>
 
-        <div className="mt-4 space-y-5 rounded-3xl border border-line bg-surface p-5 shadow-soft">
+        <p className="mt-1 text-sm text-muted">
+          Tick items off as you shop.
+        </p>
+
+        <div className="mt-4 space-y-4 rounded-3xl border border-line bg-surface p-5 shadow-soft">
           {grouped.map(({ group, items }) => (
             <div key={group}>
               <h3 className="eyebrow">{group}</h3>
-              <div className="mt-1.5 divide-y divide-line">
-                {items.map((it, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
-                    <span className="text-ink">
-                      {it.name}{" "}
-                      <span className="text-muted">
-                        · {amount(it)}
-                      </span>
-                    </span>
-                    <span className="tnum font-bold text-ink">
-                      {money(it.subtotal)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <ul className="mt-1">
+                {items.map((it, i) => {
+                  const key = it.deal_id ?? `${group}-${i}`;
+                  const done = !!checked[key];
+                  return (
+                    <li key={key}>
+                      <label className="flex cursor-pointer items-center gap-2.5 py-1 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={done}
+                          onChange={() => toggleChecked(key)}
+                          className="h-4 w-4 shrink-0 rounded border-line accent-brand"
+                        />
+                        <span
+                          className={`min-w-0 flex-1 truncate ${
+                            done ? "text-muted line-through" : "text-ink"
+                          }`}
+                        >
+                          {it.name}
+                        </span>
+                        <span className="tnum shrink-0 text-muted">
+                          {amount(it)}
+                        </span>
+                        <span className="tnum w-16 shrink-0 text-right text-ink">
+                          {money(it.subtotal)}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ))}
           <div className="flex items-center justify-between border-t-2 border-line pt-3.5">

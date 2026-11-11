@@ -152,7 +152,7 @@ export default function Home({ onFindDeals }) {
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted">
           Tell us your budget and what's already in your kitchen. We'll show you
-          exactly what to buy this week and what you're eating — built around
+          exactly what to buy this week and what you're eating, built around
           real deals at the store nearest you.
         </p>
       </motion.header>
@@ -302,7 +302,7 @@ export default function Home({ onFindDeals }) {
             <span className="font-medium text-muted">(optional)</span>
           </label>
           <p className="mb-2 text-xs text-muted">
-            Tap what's already in your kitchen — we'll leave it out of your
+            Tap what's already in your kitchen. We'll leave it out of your
             basket so your budget goes to what you actually need.
           </p>
           <div className="flex flex-wrap gap-2">

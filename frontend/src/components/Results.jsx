@@ -176,7 +176,7 @@ export default function Results({ profile, onBack }) {
             </>
           ) : (
             <p className="mt-1 text-sm text-muted">
-              This takes about 30 seconds — we'll check automatically.
+              This takes about 30 seconds. We'll check automatically.
             </p>
           )}
         </motion.div>
