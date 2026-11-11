@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import anthropic  # noqa: E402
 
 from ai.budget import MAX_TOKENS as PRODUCTION_MAX_TOKENS  # noqa: E402
-from ai.budget import SYSTEM_PROMPT, build_budget_prompt  # noqa: E402
+from ai.budget import SYSTEM_PROMPT, build_budget_prompt, finalize_plan  # noqa: E402
 from ai.candidates import select_candidates  # noqa: E402
 from ai.client import _extract_json  # noqa: E402
 from config import settings  # noqa: E402
@@ -399,7 +399,8 @@ def match_deal(item: dict, store_deals: list[dict]) -> tuple[dict | None, str]:
     differs slightly, price matches - flagged for review, not a violation),
     'price_mismatch' (name found, price isn't one the flyer lists) or 'missing'.
     """
-    name = norm(item.get("name", ""))
+    # Plans priced by ai.budget.finalize_plan carry the flyer's own name.
+    name = norm(item.get("deal_name") or item.get("name", ""))
     try:
         price = round(float(item.get("price")), 2)
     except (TypeError, ValueError):
@@ -497,11 +498,13 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
 
     # Recipe ingredients come from the list (or from home, which the app's own rule 5 allows).
     for meal in plan.get("meals") or []:
-        for use in meal.get("uses") or []:
+        for use in (meal.get("uses") or []) + (meal.get("from_home") or []):
             u = norm(use)
             in_basket = any(u and (u == b or u in b or b in u) for b in basket_names if b)
             if in_basket:
                 continue
+            if re.fullmatch(r"\s*(salt|pepper|water|salt and pepper)\s*", use, re.I):
+                continue  # the prompt always allows these
             if pantry_re and pantry_re.search(use):
                 r("meal_uses_pantry_item", f"{meal.get('name')!r} uses {use!r} from home (allowed by the prompt's rule 5)")
                 continue
@@ -525,7 +528,8 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
         texts = [("basket", it.get("name", ""), (it.get("_deal") or {}).get("category")) for it in basket]
         for meal in plan.get("meals") or []:
             texts.append(("meal", meal.get("name", ""), None))
-            texts += [("meal ingredient", u, None) for u in meal.get("uses") or []]
+            texts += [("meal ingredient", u, None)
+                      for u in (meal.get("uses") or []) + (meal.get("from_home") or [])]
         for where, text, category in texts:
             label = f"{where} {text!r}"
             if restriction == "Vegetarian":
@@ -580,6 +584,12 @@ def report(data: dict, cases: list[dict], out_dir: str = OUT_DIR,
         if not resp.get("error"):
             try:
                 plan = _extract_json(resp["text"])
+                # Current schema: the model picks deal IDs and Python prices them,
+                # exactly as the route does. Responses saved under the old schema
+                # (no IDs) are scored as they were.
+                if isinstance(plan, dict) and any(
+                        isinstance(i, dict) and "id" in i for i in plan.get("basket") or []):
+                    plan = finalize_plan(plan, c["candidates"], p)
                 row["parsed_json"] = True
             except (ValueError, json.JSONDecodeError):
                 pass
@@ -772,7 +782,7 @@ def compare(args) -> int:
 
     client = None if args.offline else anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=2)
     worst = estimate(client, cases, arms, offline=args.offline,
-                     legacy_ok=os.path.abspath(args.cases) == os.path.abspath(CASES_FILE))
+                     legacy_ok=False)  # the prompt has changed since those runs
     if worst > args.max_cost:
         print(f"STOP: worst-case cost ${worst:.2f} is over the ${args.max_cost:.2f} limit. "
               "Lower --candidate-max-tokens, use --limit, or raise --max-cost only with approval.")

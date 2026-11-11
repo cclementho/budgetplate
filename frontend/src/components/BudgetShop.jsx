@@ -6,7 +6,16 @@ import { Bulb, Check, Copy, Sparkles } from "./icons.jsx";
 const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
 
 // Printable shopping list is grouped in this fixed order (Section 4).
-const GROUP_ORDER = ["Proteins", "Produce", "Grains & Pantry", "Other"];
+const GROUP_ORDER = [
+  "Proteins",
+  "Produce",
+  "Grains & Pantry",
+  "Dairy & Eggs",
+  "Other",
+];
+
+// "2", "1.5": how many of a listing to buy, without trailing zeros.
+const qty = (v) => (v == null ? "1" : String(Number(Number(v).toFixed(2))));
 
 // Sections 2-4 of the results page:
 //   2. Your weekly basket (hero) — items, running total, budget verdict, swap
@@ -22,6 +31,9 @@ export default function BudgetShop({ result, budget }) {
   const total = result?.estimated_total ?? plan?.estimated_total;
   const underBudget = result?.under_budget;
   const swap = plan?.swap_suggestion;
+  // Lunch and dinner for a week is 14 servings per person.
+  const servingsTotal = plan?.servings_total;
+  const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
 
@@ -55,7 +67,7 @@ export default function BudgetShop({ result, budget }) {
     grouped.forEach(({ group, items }) => {
       lines.push(group.toUpperCase());
       items.forEach((it) =>
-        lines.push(`  - ${it.name} (${it.suggested_quantity}) — ${money(it.subtotal)}`)
+        lines.push(`  - ${it.name} (x${qty(it.quantity)}): ${money(it.subtotal)}`)
       );
       lines.push("");
     });
@@ -97,7 +109,7 @@ export default function BudgetShop({ result, budget }) {
               <div className="min-w-0">
                 <p className="font-bold text-ink">{it.name}</p>
                 <p className="tnum text-sm text-muted">
-                  {it.suggested_quantity} · {money(it.price)} each
+                  {qty(it.quantity)} × {money(it.price)}
                 </p>
                 <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>
@@ -184,6 +196,14 @@ export default function BudgetShop({ result, budget }) {
           <h2 className="text-xl font-extrabold tracking-tight text-ink">
             What you can make
           </h2>
+          {servingsTotal > 0 && servingsTarget > 0 && (
+            <p className="mt-1 text-sm text-muted">
+              About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
+              servings, planned for{" "}
+              <span className="tnum">{servingsTarget}</span> (lunch and dinner
+              for 7 days).
+            </p>
+          )}
           <motion.div
             variants={stagger}
             initial="hidden"
@@ -199,7 +219,13 @@ export default function BudgetShop({ result, budget }) {
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-extrabold text-ink">{m.name}</h3>
                   <span className="tnum shrink-0 rounded-full bg-brand-tint px-2.5 py-1 text-xs font-bold text-brand-deep">
-                    {m.prep_time}
+                    {[
+                      m.servings > 0 &&
+                        `${m.servings} ${m.servings === 1 ? "serving" : "servings"}`,
+                      m.prep_time,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -209,6 +235,14 @@ export default function BudgetShop({ result, budget }) {
                       className="rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-semibold text-brand-deep"
                     >
                       {u}
+                    </span>
+                  ))}
+                  {(m.from_home || []).map((u, j) => (
+                    <span
+                      key={`home-${j}`}
+                      className="rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-semibold text-muted"
+                    >
+                      {u} · at home
                     </span>
                   ))}
                 </div>
@@ -259,7 +293,7 @@ export default function BudgetShop({ result, budget }) {
                     <span className="text-ink">
                       {it.name}{" "}
                       <span className="text-muted">
-                        · {it.suggested_quantity}
+                        · x{qty(it.quantity)}
                       </span>
                     </span>
                     <span className="tnum font-bold text-ink">

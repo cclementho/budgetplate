@@ -187,21 +187,9 @@ def budget_plan(profile: BudgetProfile) -> dict:
             stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
         )
 
-    # Recompute the total from the basket subtotals so the budget verdict is
-    # correct even if the model's arithmetic drifts.
-    estimated = None
-    if isinstance(plan, dict):
-        basket = plan.get("basket") or []
-        subtotals = [
-            item.get("subtotal")
-            for item in basket
-            if isinstance(item.get("subtotal"), (int, float))
-        ]
-        if subtotals:
-            estimated = round(sum(subtotals), 2)
-            plan["estimated_total"] = estimated
-        else:
-            estimated = plan.get("estimated_total")
+    # Prices, subtotals and the total were computed from the flyer in
+    # ai.budget.finalize_plan, not by the model.
+    estimated = plan["estimated_total"] if plan["basket"] else None
 
     return {
         "postal_code": postal_code,
