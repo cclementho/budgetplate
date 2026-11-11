@@ -149,7 +149,7 @@ def test_invented_or_broken_basket_lines_are_dropped_and_duplicates_merged(caplo
         plan = finalize_plan(raw, DEALS, PROFILE)
     assert [(i["name"], i["quantity"], i["subtotal"]) for i in plan["basket"]] == [("Bok choy", 3, 5.97)]
     assert plan["meals"][0] == {"name": "Greens", "servings": 4, "uses": ["Bok choy"], "from_home": [],
-                                "prep_time": "", "instructions": ""}
+                                "appliance": None, "prep_time": "", "instructions": ""}
     assert "dropped 3 basket line(s)" in caplog.text
 
 
@@ -238,3 +238,40 @@ def test_route_logs_one_timing_line_with_stages_and_tokens(claude, monkeypatch, 
                  "deals_sent=1", "input_tokens=3754", "output_tokens=900", "outcome=ok"):
         assert part in line
     assert "pipeline_ms=" not in line  # data was fresh, so no scrape ran
+
+
+# --- kitchen appliances -----------------------------------------------------------
+
+def test_prompt_limits_meals_to_the_shoppers_appliances():
+    prompt = build_budget_prompt({**PROFILE, "appliances": ["Microwave", "Air fryer"]}, DEALS)
+    assert "Kitchen appliances (the ONLY ways they can cook): Microwave, Air fryer" in prompt
+    assert "ONLY the shopper's kitchen\n   appliances: Microwave, Air fryer." in prompt
+    assert '"appliance": "<the ONE appliance' in prompt
+    # No selection given (e.g. an older client): stovetop and oven.
+    assert "the ONLY ways they can cook): Stovetop, Oven" in build_budget_prompt(PROFILE, DEALS)
+
+
+def test_each_meal_reports_its_appliance_and_off_list_ones_are_blanked(caplog):
+    raw = {"basket": [{"id": 2, "name": "Bok choy", "quantity": 1}],
+           "meals": [{"name": "Steamed greens", "servings": 2, "uses": [2], "appliance": "microwave"},
+                     {"name": "Roast greens", "servings": 2, "uses": [2], "appliance": "Oven"}]}
+    with caplog.at_level(logging.WARNING, logger="budgetplate.budget"):
+        plan = finalize_plan(raw, DEALS, {**PROFILE, "appliances": ["Microwave"]})
+    assert [m["appliance"] for m in plan["meals"]] == ["Microwave", None]
+    assert "Roast greens: Oven" in caplog.text
+
+
+def test_route_accepts_only_known_appliances_and_needs_at_least_one(claude, monkeypatch):
+    import main
+
+    monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
+    monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
+    client = TestClient(main.app)
+    base = {"postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 60, "people": 1}
+
+    assert client.post("/api/budget-plan", json={**base, "appliances": []}).status_code == 422
+    assert client.post("/api/budget-plan", json={**base, "appliances": ["Campfire"]}).status_code == 422
+    assert client.post("/api/budget-plan", json={**base, "appliances": ["Air fryer"]}).status_code == 200
+    assert "the ONLY ways they can cook): Air fryer" in claude.requests[-1]["messages"][0]["content"]
+    assert client.post("/api/budget-plan", json=base).status_code == 200   # default applies
+    assert "the ONLY ways they can cook): Stovetop, Oven" in claude.requests[-1]["messages"][0]["content"]

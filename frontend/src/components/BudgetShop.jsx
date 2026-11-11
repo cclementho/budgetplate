@@ -222,6 +222,7 @@ export default function BudgetShop({ result, budget }) {
                     {[
                       m.servings > 0 &&
                         `${m.servings} ${m.servings === 1 ? "serving" : "servings"}`,
+                      m.appliance,
                       m.prep_time,
                     ]
                       .filter(Boolean)

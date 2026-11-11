@@ -28,6 +28,11 @@ _BUCKET_GROUP = {
     "dairy_eggs": "Dairy & Eggs",
 }
 
+# Kitchen appliances a shopper can say they have (the frontend offers exactly
+# these). Most kitchens have the first two, so they are the default.
+APPLIANCES = ["Stovetop", "Oven", "Microwave", "Air fryer", "Rice cooker", "Instant Pot"]
+DEFAULT_APPLIANCES = ["Stovetop", "Oven"]
+
 # Lunch and dinner for seven days.
 SERVINGS_PER_PERSON = 14
 
@@ -48,6 +53,7 @@ SHOPPER
 - Cuisine preferences: {cuisines}
 - Dietary restriction: {restriction}
 - ALREADY HAS AT HOME (do not buy these): {pantry}
+- Kitchen appliances (the ONLY ways they can cook): {appliances}
 - Store: {merchant}
 
 THE GOAL
@@ -80,6 +86,7 @@ Return ONLY valid JSON in exactly this schema:
       "servings": <portions this makes, a whole number>,
       "uses": [<IDs of the basket items this meal uses>],
       "from_home": ["<ingredient the shopper already has, if used>"],
+      "appliance": "<the ONE appliance from the shopper's list that cooks this meal>",
       "prep_time": "<realistic, e.g. 20 minutes>",
       "instructions": "<ONE simple sentence>"
     }}
@@ -101,6 +108,12 @@ HARD RULES (never break these)
    things from the ALREADY HAS AT HOME list (salt, pepper and water are always
    fine). Everything else a meal needs must be in the basket.
 6. Only choose deals from the list above, by ID. Do not invent items.
+7. Every meal must be fully cookable with ONLY the shopper's kitchen
+   appliances: {appliances}. No step may need anything else. Microwave only
+   means no stovetop and no oven steps at all; no oven means no roasting or
+   baking. Shop accordingly: don't buy a roast without an oven, or dried
+   beans that need hours of simmering without a stovetop or Instant Pot.
+   "appliance" must be exactly one name from the shopper's list.
 
 OTHER RULES
 - PRIORITISE ingredients common to the shopper's cuisines when several deals
@@ -137,6 +150,12 @@ def servings_target(people) -> int:
         return SERVINGS_PER_PERSON
 
 
+def _appliances(profile: dict) -> list[str]:
+    """The shopper's appliances, in a fixed order (default: stovetop and oven)."""
+    chosen = set(profile.get("appliances") or DEFAULT_APPLIANCES)
+    return [a for a in APPLIANCES if a in chosen] or list(DEFAULT_APPLIANCES)
+
+
 def deal_line(deal_id: int, deal: dict) -> str:
     """One deal as the model sees it: 'ID | NAME | $PRICE | $PER_KG | CATEGORY'."""
     return (
@@ -149,7 +168,7 @@ def build_budget_prompt(profile: dict, deals: list[dict]) -> str:
     """Render the user prompt for a profile and the shortlisted deals.
 
     ``profile`` keys: budget, people, cuisines (list), restriction (str|None),
-    pantry (list), merchant. ``deals`` are the candidate rows (already
+    pantry (list), appliances (list), merchant. ``deals`` are the candidate rows (already
     pantry-filtered and shortlisted by the caller); a deal's ID is its
     position in this list, starting at 1.
     """
@@ -166,6 +185,7 @@ def build_budget_prompt(profile: dict, deals: list[dict]) -> str:
         cuisines=cuisines_text,
         restriction=restriction,
         pantry=pantry_text,
+        appliances=", ".join(_appliances(profile)),
         merchant=profile.get("merchant", "the store"),
         deals="\n".join(deal_line(i, d) for i, d in enumerate(deals, 1)),
     )
@@ -227,6 +247,8 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
         line["subtotal"] = round(line["price"] * line["quantity"], 2)
         basket.append(line)
 
+    allowed = {a.lower(): a for a in _appliances(profile)}
+    off_list: list[str] = []
     meals = []
     used_ids: set[int] = set()
     for entry in raw.get("meals") or []:
@@ -240,11 +262,16 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
                 uses.append(lines[int(ref_id)]["name"])
         from_home = [str(x).strip() for x in entry.get("from_home") or [] if str(x).strip()]
         servings = _number(entry.get("servings"), 0)
+        said = str(entry.get("appliance") or "").strip()
+        appliance = allowed.get(said.lower())
+        if said and appliance is None:
+            off_list.append(f"{entry.get('name')}: {said}")
         meals.append({
             "name": str(entry.get("name") or "").strip(),
             "servings": max(int(round(servings)), 0),
             "uses": uses,
             "from_home": from_home,
+            "appliance": appliance,  # None if the model named one the shopper lacks
             "prep_time": str(entry.get("prep_time") or "").strip(),
             "instructions": str(entry.get("instructions") or "").strip(),
         })
@@ -255,6 +282,9 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             "budget plan cleanup: dropped %d basket line(s) with no valid deal ID; "
             "%d bought item(s) not used by any meal: %s", invalid, len(unused), unused,
         )
+
+    if off_list:
+        logger.warning("budget plan: meals naming an appliance the shopper doesn't have: %s", off_list)
 
     swap = raw.get("swap_suggestion")
     return {

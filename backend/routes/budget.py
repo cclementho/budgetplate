@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -51,6 +52,10 @@ class BudgetProfile(BaseModel):
     cuisines: list[str] = []  # up to 3 cuisine preferences
     restriction: str | None = None  # single dietary restriction (optional)
     pantry: list[str] = []  # ingredients the shopper already has at home
+    # What the shopper can cook with; every meal must work with only these.
+    appliances: list[
+        Literal["Stovetop", "Oven", "Microwave", "Air fryer", "Rice cooker", "Instant Pot"]
+    ] = Field(default_factory=lambda: ["Stovetop", "Oven"], min_length=1)
 
 
 # Coarse category filters we can apply deterministically before calling Claude.
@@ -168,6 +173,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
                     "cuisines": profile.cuisines,
                     "restriction": profile.restriction,
                     "pantry": profile.pantry,
+                    "appliances": profile.appliances,
                     "merchant": profile.merchant,
                 },
                 candidates,
