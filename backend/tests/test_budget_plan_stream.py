@@ -152,6 +152,9 @@ def test_route_streams_start_items_meals_then_the_validated_plan(claude, client,
         response = client.post("/api/budget-plan/stream", json=BODY)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+    # Proxies (nginx, Render's edge) must pass events through as they are written.
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
     events = read_events(response)
     assert [name for name, _ in events] == ["start", "item", "item", "item", "meal", "meal", "done"]
 
@@ -185,3 +188,24 @@ def test_route_answers_with_plain_json_when_the_store_has_no_deals(claude, clien
     response = client.post("/api/budget-plan/stream", json=BODY)
     assert response.headers["content-type"].startswith("application/json")
     assert response.json()["plan"] is None and not claude.requests
+
+
+def test_stream_headers_survive_the_apps_middleware(claude, monkeypatch):
+    from fastapi.middleware.cors import CORSMiddleware
+
+    from rate_limit import RateLimitMiddleware
+
+    # The same middleware as main.app, on a fresh app so the shared rate
+    # limiter's count from other tests can't turn this into a 429.
+    app = FastAPI()
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(RateLimitMiddleware)
+    app.include_router(routes.budget.router, prefix="/api")
+    monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
+    monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
+    response = TestClient(app).post("/api/budget-plan/stream", json=BODY)
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    assert "content-encoding" not in response.headers        # nothing compresses (and so buffers) it
+    assert read_events(response)[-1][0] == "done"

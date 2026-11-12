@@ -425,7 +425,7 @@ psql budgetplate -f analytics/queries.sql
 # tests: a disposable database whose name must contain "test"
 createdb budgetplate_test
 pip install -r requirements-dev.txt
-pytest                             # 242 tests
+pytest                             # 243 tests
 ```
 
 ### Backfill
