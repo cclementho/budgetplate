@@ -53,7 +53,7 @@ SHOPPER
 - People to feed: {people}
 - Cuisine preferences: {cuisines}
 - Dietary restriction: {restriction}
-- ALREADY HAS AT HOME (do not buy these): {pantry}
+- ALREADY HAS AT HOME (do not buy these; using them is optional): {pantry}
 - Kitchen appliances (the ONLY ways they can cook): {appliances}
 - Store: {merchant}
 
@@ -106,10 +106,13 @@ HARD RULES (never break these)
    them (e.g. soy sauce for the stir fry).
 4. Every basket item must be used by at least one meal: its ID must appear in
    some meal's "uses". If no meal uses it, don't buy it.
-5. NEVER buy anything the shopper ALREADY HAS AT HOME. You MAY cook with those
-   ingredients: list them in a meal's "from_home". "from_home" may only contain
-   things from the ALREADY HAS AT HOME list (salt, pepper and water are always
-   fine). Everything else a meal needs must be in the basket.
+5. NEVER buy anything the shopper ALREADY HAS AT HOME. That list is what is
+   AVAILABLE, not what must be used: use one of those ingredients only when
+   the dish genuinely calls for it (soy sauce in a stir fry, never in a dal),
+   and it is fine to use none of them. List the ones a meal really uses in
+   its "from_home". "from_home" may only contain things from the ALREADY HAS
+   AT HOME list (salt, pepper and water are always fine). Everything else a
+   meal needs must be in the basket.
 6. Only choose deals from the list above, by ID. Do not invent items.
 7. Every meal must be fully cookable with ONLY the shopper's kitchen
    appliances: {appliances}. No step may need anything else. Microwave only

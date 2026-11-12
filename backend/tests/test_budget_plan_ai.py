@@ -116,7 +116,7 @@ def test_prompt_lists_deals_with_ids_the_model_must_use():
     prompt = build_budget_prompt(PROFILE, DEALS)
     assert "1 | Fresh Pork Shoulder Blade Roast | $8.80 | $8.80/kg | Meat & Seafood" in prompt
     assert "2 | Bok Choy | $1.99 | $n/a/kg | Produce" in prompt
-    assert "ALREADY HAS AT HOME (do not buy these): Rice, Soy sauce" in prompt
+    assert "ALREADY HAS AT HOME (do not buy these; using them is optional): Rice, Soy sauce" in prompt
 
 
 # --- pricing the model's choices in Python ----------------------------------------
@@ -318,3 +318,10 @@ def test_prompt_demands_real_recipes():
     assert "8. REAL RECIPES ONLY" in prompt
     assert "recognizable dish" in prompt and "ingredients that\n   dish actually needs" in prompt
     assert "leave it out of the\n   basket instead of forcing it into a meal" in prompt
+
+
+def test_prompt_says_pantry_items_are_available_not_required():
+    prompt = build_budget_prompt(PROFILE, DEALS)
+    assert "do not buy these; using them is optional" in prompt
+    assert "AVAILABLE, not what must be used" in prompt
+    assert "only when\n   the dish genuinely calls for it" in prompt
