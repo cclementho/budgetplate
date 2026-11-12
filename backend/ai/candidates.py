@@ -44,7 +44,7 @@ _NON_FOOD = _words(
     "bouquet", "flower", "plant", "rose", "tropical", r"\d+\"\s*pot", "cling wrap", "foil", "parchment", "napkin", "paper towel",
     "tissue", "garbage bag", "trash bag", "freezer bag", "sandwich bag", "cutlery",
     "candle", "batter(?:y|ie)", "light bulb", "pet", "dog food", "cat food", "dog treat",
-    "cat treat", "kitten", "puppy",
+    "cat treat", "kitten", "puppy", "milk-?bone",
     "litter", "vitamin", "supplement", "advil", "tylenol", "reactine", "claritin", "allegra",
     "benadryl", "razor", "shampoo", "conditioner", "lotion", "deodorant", "toothpaste",
     "toothbrush", "diaper", "wipe", "soap", "detergent", "cleaner", "bleach", "toy", "plush",
@@ -57,7 +57,7 @@ _SNACK_OR_DRINK = _words(
     "cupcake", "pie", "donut", "doughnut", "dessert", "macaroon", "swiss roll", "pudding",
     "jell-?o", "jelly powder", "ice cream", "popsicle", "novelt(?:y|ie)", "granola bar",
     "protein bar", "chocolate bar", "candy bar", "nature valley",
-    "turtle", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
+    "turtle", "brandy bean", "bubly", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
     "garden cocktail", "juice cocktail", "cranberry cocktail", "cocktail mix", "clamato", "juice", "nectar", "lassi", "energy drink", "drink", "beverage", "iced tea",
     "coffee", "espresso", "k-cup", "tea", "water", "kombucha", "beer", "wine", "cider",
 )
@@ -141,6 +141,48 @@ CUISINE_KEYWORDS = {
 }
 
 
+# The ingredients that make a cuisine that cuisine, used only to judge whether
+# the store has much for it this week. Stricter than CUISINE_KEYWORDS, which
+# also boosts everyday items (pork, garlic, eggs) that say nothing about a
+# cuisine being well served.
+CUISINE_STAPLES = {
+    "Chinese": _words(
+        "tofu", "bok choy", "gai lan", "napa", "ginger", "scallion", "green onion", "soy sauce",
+        "sesame", "hoisin", "oyster sauce", "dumpling", "wonton", "noodle", "chow mein",
+        "shiitake", "bean sprout", "five spice", "congee", "chinese",
+    ),
+    "South Asian": _words(
+        "lentil", "dal", "chickpea", "basmati", "paneer", "naan", "roti", "paratha", "ghee",
+        "curry", "masala", "turmeric", "cumin", "coriander", "methi", "okra", "atta",
+    ),
+    "Middle Eastern": _words(
+        "chickpea", "lentil", "pita", "hummus", "tahini", "lamb", "eggplant", "feta", "olive",
+        "bulgur", "couscous", "falafel", "halal", "za'?atar", "sumac",
+    ),
+    "Mexican": _words(
+        "tortilla", "bean", "salsa", "avocado", "cilantro", "lime", "jalape[nñ]o", "taco",
+        "chorizo", "corn",
+    ),
+    "Italian": _words(
+        "pasta", "spaghetti", "penne", "lasagna", "gnocchi", "passata", "basil", "mozzarella",
+        "parmesan", "ricotta", "olive oil", "italian sausage", "pesto", "tomato sauce",
+        "tomato paste",
+    ),
+    "American": _words(
+        "ground beef", "cheddar", "bacon", "burger", "bun", "hot dog", "wiener", "macaroni",
+        "potato", "corn", "turkey", "chicken",
+    ),
+    "Korean": _words(
+        "tofu", "kimchi", "gochujang", "sesame", "napa", "scallion", "green onion", "noodle",
+        "radish", "short rib", "korean",
+    ),
+    "Japanese": _words(
+        "tofu", "udon", "soba", "ramen", "noodle", "miso", "nori", "seaweed", "panko",
+        "teriyaki", "edamame", "salmon", "sushi", "japanese",
+    ),
+}
+
+
 def bucket_for(deal: dict) -> str | None:
     """Which bucket a deal belongs to, or None when it shouldn't be offered."""
     name = deal.get("clean_name") or ""
@@ -183,6 +225,38 @@ def _value_ranks(deals: list[dict]) -> dict[int, float]:
 
 def _cuisine_patterns(cuisines) -> list[re.Pattern]:
     return [CUISINE_KEYWORDS[c] for c in (cuisines or []) if c in CUISINE_KEYWORDS]
+
+
+# Below this many matching deals on the shortlist, the shopper is told the
+# store has little for their cuisine this week.
+MIN_CUISINE_MATCHES = 5
+
+
+def cuisine_match_count(deals: list[dict], cuisines: list[str] | None) -> int | None:
+    """How many of the deals are staples of the shopper's cuisines.
+
+    None when there is nothing to measure: no cuisine chosen, or only options
+    without keywords such as "Whatever is cheapest".
+    """
+    patterns = [CUISINE_STAPLES[c] for c in (cuisines or []) if c in CUISINE_STAPLES]
+    if not patterns:
+        return None
+    return sum(
+        1 for deal in deals if any(p.search(deal.get("clean_name") or "") for p in patterns)
+    )
+
+
+def cuisine_note(deals: list[dict], cuisines: list[str] | None, merchant: str) -> str | None:
+    """A short, honest heads-up when few shortlisted deals fit the cuisines."""
+    count = cuisine_match_count(deals, cuisines)
+    if count is None or count >= MIN_CUISINE_MATCHES:
+        return None
+    names = [c for c in cuisines if c in CUISINE_STAPLES]
+    label = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+    return (
+        f"Not many {label} staples on sale at {merchant} this week, "
+        "so some meals lean on what's cheap."
+    )
 
 
 def select_candidates(

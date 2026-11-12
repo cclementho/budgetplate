@@ -121,3 +121,45 @@ def test_deterministic_and_does_not_modify_the_input():
 def test_duplicate_listings_are_sent_once():
     deals = [deal("Bok Choy", 1.99, category="Produce")] * 3
     assert len(select_candidates(deals)) == 1
+
+
+# --- honest cuisine matching ----------------------------------------------------
+
+def _named(*names):
+    return [{"clean_name": n, "price": 2.0, "category": "Other"} for n in names]
+
+
+def test_cuisine_note_appears_when_fewer_than_five_candidates_match():
+    from ai.candidates import cuisine_match_count, cuisine_note
+
+    few = _named("Sunrise Tofu", "Bok Choy", "Ground Beef", "Cheddar", "Tortillas", "Bananas")
+    assert cuisine_match_count(few, ["Chinese"]) == 2
+    assert cuisine_note(few, ["Chinese"], "FreshCo") == (
+        "Not many Chinese staples on sale at FreshCo this week, so some meals lean on what's cheap."
+    )
+    assert "Chinese or Korean staples" in cuisine_note(few[:1], ["Chinese", "Korean"], "FreshCo")
+
+    # Everyday items (pork, garlic, eggs, mushrooms) don't count as staples.
+    assert cuisine_match_count(_named("Pork Chops", "Garlic Bread", "Large Eggs", "Mushrooms"), ["Chinese"]) == 0
+    plenty = _named("Sunrise Tofu", "Bok Choy", "Egg Noodles", "Fresh Ginger", "Napa Cabbage")
+    assert cuisine_note(plenty, ["Chinese"], "FreshCo") is None
+
+
+def test_no_cuisine_note_without_a_real_cuisine():
+    from ai.candidates import cuisine_note
+
+    deals = _named("Ground Beef")
+    assert cuisine_note(deals, [], "FreshCo") is None
+    assert cuisine_note(deals, None, "FreshCo") is None
+    assert cuisine_note(deals, ["Whatever is cheapest"], "FreshCo") is None
+
+
+def test_every_frontend_cuisine_has_staples():
+    from ai.candidates import CUISINE_KEYWORDS, CUISINE_STAPLES
+
+    assert set(CUISINE_STAPLES) == set(CUISINE_KEYWORDS)
+
+
+def test_dog_biscuits_liqueur_chocolates_and_sparkling_water_are_dropped():
+    for name in ["Milk-Bone Real Salmon Dog Biscuits", "Maitre Truffout Brandy Beans", "Bubly Lime 12x355 mL"]:
+        assert bucket_for({"clean_name": name, "category": "Other"}) is None

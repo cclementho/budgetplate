@@ -45,6 +45,8 @@ export default function BudgetShop({ result, budget }) {
   const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
+  // Set when few of this week's deals fit the shopper's cuisines.
+  const cuisineNote = result?.cuisine_note;
 
   if (!plan || basket.length === 0) {
     return (
@@ -211,6 +213,12 @@ export default function BudgetShop({ result, budget }) {
           <h2 className="text-xl font-extrabold tracking-tight text-ink">
             What you can make
           </h2>
+          {cuisineNote && (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl bg-accent-light px-3.5 py-3 text-sm font-medium text-accent-deep">
+              <Bulb size={18} className="mt-0.5 shrink-0" />
+              <span>{cuisineNote}</span>
+            </div>
+          )}
           {servingsTotal > 0 && servingsTarget > 0 && (
             <p className="mt-1 text-sm text-muted">
               About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}

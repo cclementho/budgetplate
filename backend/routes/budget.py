@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan
-from ai.candidates import select_candidates
+from ai.candidates import cuisine_note, select_candidates
 from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
@@ -235,6 +235,8 @@ def budget_plan(profile: BudgetProfile) -> dict:
             "prefilter_ms", select_candidates, filtered, profile.cuisines
         )
         deals_available, deals_sent = len(filtered), len(candidates)
+        # Say so up front when the store has little for the shopper's cuisine.
+        note = cuisine_note(candidates, profile.cuisines, profile.merchant)
 
         try:
             plan = watch.time(
@@ -279,5 +281,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
         "under_budget": (estimated is not None and estimated <= profile.budget),
         # Deals left out because the shopper already has them.
         "skipped_pantry_items": skipped_pantry,
+        # Set when fewer than 5 shortlisted deals fit the shopper's cuisines.
+        "cuisine_note": note,
         "plan": plan,
     }

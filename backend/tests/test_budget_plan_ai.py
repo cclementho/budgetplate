@@ -325,3 +325,14 @@ def test_prompt_says_pantry_items_are_available_not_required():
     assert "do not buy these; using them is optional" in prompt
     assert "AVAILABLE, not what must be used" in prompt
     assert "only when\n   the dish genuinely calls for it" in prompt
+
+
+def test_route_returns_a_cuisine_note_when_few_deals_fit(claude, monkeypatch):
+    import main
+
+    monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
+    monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
+    body = TestClient(main.app).post("/api/budget-plan", json={
+        "postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 60, "cuisines": ["Mexican"]}).json()
+    assert body["cuisine_note"].startswith("Not many Mexican staples on sale at FreshCo")
+    assert 'Never call an ingredient "Chinese"' in build_budget_prompt(PROFILE, DEALS)

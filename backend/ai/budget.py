@@ -137,6 +137,10 @@ OTHER RULES
   best-value sensible week.
 - Meals must genuinely fit the shopper's cuisine (a Korean preference gets
   bibimbap or doenjang jjigae, NOT pasta).
+- Be honest about cuisine in "why". Never call an ingredient "Chinese" (or any
+  other cuisine) unless it really is a staple of that cuisine: red onions,
+  potatoes and Indian eggplant are not "classic Chinese" ingredients. If
+  nothing better is on sale, say what it is for instead ("for the stir fry").
 - Respect the dietary restriction strictly (e.g. Halal = no pork or alcohol,
   Gluten-free = avoid wheat/barley, Vegetarian/Vegan = no meat/seafood, Vegan
   also no dairy or eggs).
