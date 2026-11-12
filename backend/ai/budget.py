@@ -200,9 +200,10 @@ def servings_target(people, include_breakfast: bool = True) -> int:
         return per_person
 
 
-_BREAKFAST_GOAL = """- Breakfast: 7 of each person's servings are breakfasts ({breakfast_servings} in total). Keep them simple and
-  cheap, the kind of thing people really eat on a weekday: eggs, oats, toast, congee, yogurt and fruit. One or
-  two breakfasts repeated through the week is normal. Set "meal" to "breakfast" for these and "main" for
+_BREAKFAST_GOAL = """- Breakfast: 7 of each person's servings are breakfasts ({breakfast_servings} in total). Breakfasts must be
+  things people eat in the morning: eggs, oats, toast, congee, yogurt, fruit. NEVER put potatoes or onion in a
+  breakfast (no hash, no home fries). Keep them simple and cheap. One or two breakfasts repeated through the
+  week is normal. Set "meal" to "breakfast" for these and "main" for
   lunches and dinners.
 """
 

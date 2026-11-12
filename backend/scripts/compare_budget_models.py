@@ -53,7 +53,7 @@ from ai.candidates import (  # noqa: E402
 )
 from ai.client import _extract_json  # noqa: E402
 from ai.plan_checks import (  # noqa: E402
-    ingredient_text, missing_named_ingredients, not_at_home, unknown_uses,
+    breakfast_misfits, missing_named_ingredients, not_at_home, unknown_uses,
 )
 from config import settings  # noqa: E402
 
@@ -475,10 +475,6 @@ def schema_ok(plan) -> bool:
     return all(isinstance(m, dict) and isinstance(m.get("uses"), list) for m in meals)
 
 
-_COOKED_ONION = re.compile(
-    r"saut[eé]|fr(?:y|ied|ying)|cook|caramel|soften|brown|simmer|bake|roast|scrambl|omelet|grill", re.I)
-
-
 def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], list[dict]]:
     """Return (violations, review_flags) for one plan. Nothing is fixed."""
     profile = case["profile"]
@@ -556,22 +552,14 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
                 r("meal_uses_pantry_item", f"{meal.get('name')!r} uses {use!r} from home (allowed by the prompt)")
 
     # The meal's name promises ingredients the meal doesn't have, and breakfast
-    # shouldn't be built on potatoes or raw onion.
+    # shouldn't contain potatoes or onion.
     for meal in plan.get("meals") or []:
-        has_text = ingredient_text(meal, basket)
         meal_name = meal.get("name", "")
         for label in missing_named_ingredients(meal, basket):
             v("meal_name_ingredient_missing",
               f"{meal_name!r} names {label} but uses {(meal.get('uses') or []) + (meal.get('from_home') or [])}")
-        if meal.get("meal") == "breakfast":
-            if re.search(r"potato|hash ?brown", has_text, re.I):
-                v("breakfast_potato_or_raw_onion", f"breakfast {meal_name!r} contains potatoes: {meal.get('uses')}")
-            elif re.search(r"\bonions?\b", has_text, re.I):
-                if _COOKED_ONION.search(meal.get("instructions") or ""):
-                    r("breakfast_cooked_onion", f"breakfast {meal_name!r} cooks onion: {meal.get('instructions')!r}")
-                else:
-                    v("breakfast_potato_or_raw_onion",
-                      f"breakfast {meal_name!r} has onion and never cooks it: {meal.get('instructions')!r}")
+        for label in breakfast_misfits(meal, basket):
+            v("breakfast_potato_or_onion", f"breakfast {meal_name!r} contains {label}: {meal.get('uses')}")
 
     # Enough food: the servings add up to most of the week.
     target = plan.get("servings_target")
@@ -624,7 +612,7 @@ VIOLATION_TYPES = [
     "item_not_on_flyer", "price_not_on_flyer", "meal_ingredient_not_in_basket",
     "pantry_item_in_basket", "over_budget", "non_food_item", "not_vegetarian", "contains_dairy",
     "meal_name_ingredient_missing", "bulk_pack_small_household", "one_deal_as_multiple_products",
-    "breakfast_potato_or_raw_onion",
+    "breakfast_potato_or_onion",
 ]
 
 

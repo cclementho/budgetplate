@@ -129,6 +129,23 @@ def missing_named_ingredients(meal: dict, basket: list[dict]) -> list[str]:
     return [label for label, said, has in NAME_INGREDIENTS if said.search(name) and not has.search(has_text)]
 
 
+_NOT_FOR_BREAKFAST = [
+    ("potatoes", re.compile(r"potato|hash ?brown|home fries", re.I)),
+    ("onion", re.compile(r"(?<!green )(?<!spring )\bonions?\b", re.I)),
+]
+
+
+def breakfast_misfits(meal: dict, basket: list[dict]) -> list[str]:
+    """What a breakfast contains that doesn't belong in one: potatoes, onion.
+
+    Empty for lunches and dinners. Green onion (on congee, say) is fine.
+    """
+    if meal.get("meal") != "breakfast":
+        return []
+    text = f"{meal.get('name') or ''} | {ingredient_text(meal, basket)}"
+    return [label for label, pattern in _NOT_FOR_BREAKFAST if pattern.search(text)]
+
+
 def unknown_uses(meal: dict, basket: list[dict]) -> list[str]:
     """Entries in a meal's "uses" that aren't on the shopping list."""
     names = {_norm(line.get("name")) for line in basket}
@@ -158,6 +175,7 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
 
     Not fixable here (listed in ``problems``, each naming its meal):
     - a meal's name promises an ingredient the meal doesn't use;
+    - a breakfast contains potatoes or onion;
     - a meal is left with nothing to cook.
 
     Returns ``(plan, {"fixes": [...], "problems": [...]})``; the input is not
@@ -210,6 +228,10 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
             problems.append({"meal": name, "type": "name_promises_missing_ingredient",
                              "detail": f'"{name}" is named for {label} but uses none: it has only '
                                        f'{(meal.get("uses") or []) + (meal.get("from_home") or [])}'})
+        for label in breakfast_misfits(meal, basket):
+            problems.append({"meal": name, "type": "breakfast_with_potato_or_onion",
+                             "detail": f'the breakfast "{name}" contains {label}; breakfasts must not use '
+                                       "potatoes or onion"})
         if not meal.get("uses") and not meal.get("from_home"):
             problems.append({"meal": name, "type": "meal_has_no_ingredients",
                              "detail": f'"{name}" has no ingredients from the basket or from home'})

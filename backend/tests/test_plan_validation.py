@@ -192,3 +192,27 @@ def test_the_stream_announces_the_retry_and_ends_with_the_corrected_plan(claude)
     plan, stats = events[-1][1]
     assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"] and stats["retried"] is True
     assert "stream" not in claude.requests[1]                              # the correction is a plain call
+
+
+# --- breakfast --------------------------------------------------------------------
+
+def test_breakfasts_with_potato_or_onion_are_flagged():
+    from ai.budget import build_budget_prompt
+    from ai.plan_checks import breakfast_misfits
+
+    basket = [line("Potatoes", 3, "Russet Potatoes 5 Lb"), line("Eggs", 4), line("Onions", 2, "Yellow Onions 3 Lb"),
+              line("Scallions", 1, "Green Onions")]
+    assert breakfast_misfits(meal("Breakfast hash", ["Potatoes", "Eggs"], kind="breakfast"), basket) == ["potatoes"]
+    assert breakfast_misfits(meal("Omelette", ["Eggs", "Onions"], kind="breakfast"), basket) == ["onion"]
+    assert breakfast_misfits(meal("Sweet potato hash", ["Eggs"], kind="breakfast"), basket) == ["potatoes"]  # by name
+    assert breakfast_misfits(meal("Congee with egg", ["Eggs", "Scallions"], ["rice"], kind="breakfast"), basket) == []
+    assert breakfast_misfits(meal("Potato and onion curry", ["Potatoes", "Onions"]), basket) == []   # dinner is fine
+
+    plan = {"basket": basket, "meals": [meal("Egg and potato scramble", ["Potatoes", "Eggs"], kind="breakfast")]}
+    _, report = validate_plan(plan, PROFILE)
+    assert [p["type"] for p in report["problems"]] == ["breakfast_with_potato_or_onion"]
+    assert "breakfasts must not use potatoes or onion" in report["problems"][0]["detail"]
+
+    prompt = build_budget_prompt({**PROFILE, "include_breakfast": True}, DEALS)
+    assert "things people eat in the morning: eggs, oats, toast, congee, yogurt, fruit" in prompt
+    assert "NEVER put potatoes or onion in a\n  breakfast" in prompt
