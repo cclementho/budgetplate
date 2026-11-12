@@ -55,6 +55,10 @@ export default function BudgetShop({ result, budget }) {
     ? meals.reduce((sum, m) => sum + (m.servings || 0), 0)
     : plan?.servings_total;
   const servingsTarget = plan?.servings_target;
+  // More than a quarter over the week's target: say so plainly instead of
+  // showing a target the plan overshoots. (Not while it is still arriving.)
+  const leftovers =
+    !streaming && servingsTarget > 0 && servingsTotal > servingsTarget * 1.25;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
   // Set when few of this week's deals fit the shopper's cuisines.
@@ -185,7 +189,9 @@ export default function BudgetShop({ result, budget }) {
           >
             {streaming ? (
               <span className="font-medium text-muted" aria-live="polite">
-                Still building your basket…
+                {result?.retrying
+                  ? "Double-checking a couple of meals…"
+                  : "Still building your basket…"}
               </span>
             ) : underBudget ? (
               <>
@@ -240,11 +246,21 @@ export default function BudgetShop({ result, budget }) {
           )}
           {servingsTotal > 0 && servingsTarget > 0 && (
             <p className="mt-1 text-sm text-muted">
-              About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
-              servings, planned for{" "}
-              <span className="tnum">{servingsTarget}</span> (
-              {withBreakfast ? "breakfast, lunch and dinner" : "lunch and dinner"}{" "}
-              for 7 days).
+              {leftovers ? (
+                <>
+                  Makes about{" "}
+                  <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
+                  servings, so you'll have leftovers.
+                </>
+              ) : (
+                <>
+                  About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
+                  servings, planned for{" "}
+                  <span className="tnum">{servingsTarget}</span> (
+                  {withBreakfast ? "breakfast, lunch and dinner" : "lunch and dinner"}{" "}
+                  for 7 days).
+                </>
+              )}
             </p>
           )}
           <motion.div

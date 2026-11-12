@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan, servings_target, stream_budget_plan
 from ai.candidates import bucket_for, cuisine_note, expand_listings, select_candidates
-from ai.client import ClaudeResponseError, last_call_stats
+from ai.client import ClaudeResponseError
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
 
@@ -309,10 +309,13 @@ def _log_timing(profile, postal_code, outcome, watch, prep, stats) -> None:
     """One line per request so Render logs show where the time went."""
     logger.info(
         "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_available=%d "
-        "deals_sent=%d model=%s input_tokens=%s output_tokens=%s",
+        "deals_sent=%d model=%s input_tokens=%s output_tokens=%s calls=%s retried=%s "
+        "renames=%s problems=%s fixes=%s",
         postal_code, profile.merchant, outcome, watch.summary(),
         prep["deals_available"] if prep else 0, len(prep["candidates"]) if prep else 0,
         stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
+        stats.get("calls", 0), int(bool(stats.get("retried"))), stats.get("renames", 0), stats.get("problems", 0),
+        stats.get("fixes", 0),
     )
 
 
@@ -329,6 +332,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
     watch = _Stopwatch()
     prep = None
     outcome = "ok"
+    stats: dict = {}  # tokens and time of every Claude call for this plan
     try:
         prep = _prepare(profile, postal_code, watch)
         if prep is None:
@@ -336,14 +340,14 @@ def budget_plan(profile: BudgetProfile) -> dict:
             return _no_deals(profile, postal_code)
         try:
             plan = watch.time(
-                "claude_ms", generate_budget_plan, _plan_profile(profile), prep["candidates"]
+                "claude_ms", generate_budget_plan, _plan_profile(profile), prep["candidates"],
+                stats=stats,
             )
         except ClaudeResponseError as exc:
             # Already logged with stop_reason and token counts in ai.client.
             outcome = f"claude_{exc.reason}"
             raise HTTPException(status_code=502, detail=PLAN_FAILED_MESSAGE)
     finally:
-        stats = last_call_stats() if "claude_ms" in watch.stages else {}
         _log_timing(profile, postal_code, outcome, watch, prep, stats)
 
     return _response(profile, postal_code, prep, plan)
@@ -363,6 +367,7 @@ def budget_plan_stream(profile: BudgetProfile):
              cuisine note, servings target)
       item   one basket line, priced from the flyer, as soon as it is complete
       meal   one meal, as soon as it is complete
+      retry  the plan is being corrected with a second call ({"problems": [...]})
       done   the full, validated /budget-plan response; it replaces whatever
              was shown from item and meal events
       error  {"detail": ...} if the plan could not be finished
@@ -415,9 +420,8 @@ def budget_plan_stream(profile: BudgetProfile):
             logger.exception("budget plan stream failed")
             yield _sse("error", {"detail": PLAN_FAILED_MESSAGE})
         finally:
-            watch.stages["claude_ms"] = stats.get(
-                "claude_ms", round((time.perf_counter() - started) * 1000)
-            )
+            # Wall time for everything Claude did, including a correction call.
+            watch.stages["claude_ms"] = round((time.perf_counter() - started) * 1000)
             _log_timing(profile, postal_code, outcome, watch, prep, stats)
 
     return StreamingResponse(

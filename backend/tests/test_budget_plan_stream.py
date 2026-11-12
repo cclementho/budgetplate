@@ -117,9 +117,9 @@ def test_items_and_meals_are_priced_in_python_before_they_are_sent(claude):
     assert [kind for kind, _ in events] == ["item", "item", "item", "meal", "meal", "plan"]   # ID 99 never sent
     pork = events[0][1]
     assert (pork["name"], pork["price"], pork["subtotal"], pork["group"], pork["size"]) == (
-        "Pork shoulder", 8.80, 8.80, "Proteins", "2 kg")
+        "Fresh Pork Shoulder Blade Roast", 8.80, 8.80, "Proteins", "2 kg")   # the flyer's name, not the model's
     assert events[1][1]["subtotal"] == 3.98                       # 2 x $1.99 from the flyer
-    assert events[4][1]["uses"] == ["Pork shoulder", "Bok choy"]  # IDs resolved against items so far
+    assert events[4][1]["uses"] == ["Fresh Pork Shoulder Blade Roast", "Bok Choy"]  # IDs resolved against items so far
     plan, stats = events[-1][1]
     assert plan["estimated_total"] == 16.27 and plan["servings_total"] == 21
     assert [i["name"] for i in plan["basket"]] == [e[1]["name"] for e in events[:3]]

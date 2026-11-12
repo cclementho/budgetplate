@@ -51,11 +51,32 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
+def _json_values(text: str) -> list:
+    """Every complete top-level JSON object or array found in the text, in order."""
+    decoder = json.JSONDecoder()
+    values = []
+    i = 0
+    while i < len(text):
+        if text[i] in "{[":
+            try:
+                value, end = decoder.raw_decode(text, i)
+            except json.JSONDecodeError:
+                i += 1
+                continue
+            values.append(value)
+            i = end
+        else:
+            i += 1
+    return values
+
+
 def _extract_json(text: str):
     """Best-effort extraction of a JSON value from a model response.
 
-    Haiku is reliable but can wrap JSON in prose or code fences. We try a strict
-    parse first, then fall back to the first balanced ``{...}`` / ``[...]`` span.
+    Haiku is reliable but can wrap JSON in prose or code fences, and sometimes
+    answers, changes its mind ("Wait, I need to recalculate") and answers
+    again. A strict parse is tried first; otherwise the LAST complete JSON
+    object in the text is used, since that is the model's final answer.
     """
     text = text.strip()
     # Strip markdown code fences if present.
@@ -68,23 +89,23 @@ def _extract_json(text: str):
     except json.JSONDecodeError:
         pass
 
-    # Fall back to the outermost array or object.
-    for open_ch, close_ch in (("[", "]"), ("{", "}")):
-        start = text.find(open_ch)
-        end = text.rfind(close_ch)
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                continue
+    values = _json_values(text)
+    objects = [v for v in values if isinstance(v, dict)]
+    if objects:
+        return objects[-1]
+    if values:
+        return values[-1]
     raise ValueError("Could not parse JSON from model response")
 
 
-def _request(prompt: str, system: str | None, max_tokens: int, model: str | None) -> dict:
+def _request(prompt: str, system: str | None, max_tokens: int, model: str | None,
+             follow_up: list[dict] | None = None) -> dict:
     kwargs = {
         "model": model or settings.CLAUDE_MODEL,
         "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
+        # follow_up continues the conversation: the model's earlier reply and
+        # the note asking it to correct it.
+        "messages": [{"role": "user", "content": prompt}, *(follow_up or [])],
     }
     if system:
         kwargs["system"] = system
@@ -137,14 +158,17 @@ def call_claude_json(
     system: str | None = None,
     max_tokens: int = 4096,
     model: str | None = None,
+    follow_up: list[dict] | None = None,
 ):
     """Call Claude Haiku and return parsed JSON from the response text.
 
     ``model`` overrides ``settings.CLAUDE_MODEL`` for one call (used by the
     model-comparison script); production callers leave it unset.
+    ``follow_up`` is extra turns after the prompt (an earlier reply and a
+    correction request).
     """
     client = get_client()
-    kwargs = _request(prompt, system, max_tokens, model)
+    kwargs = _request(prompt, system, max_tokens, model, follow_up)
 
     _last_call.stats = {}
     started = time.perf_counter()

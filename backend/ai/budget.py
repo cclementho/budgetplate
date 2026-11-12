@@ -15,8 +15,9 @@ import json
 import logging
 import re
 
-from ai.candidates import _words, bucket_for
-from ai.client import call_claude_json, stream_claude_json
+from ai.candidates import _ORIGIN_RE, _words, bucket_for
+from ai.client import ClaudeResponseError, call_claude_json, last_call_stats, stream_claude_json
+from ai.plan_checks import RENAMEABLE, missing_named_ingredients, validate_plan
 from config import settings
 
 logger = logging.getLogger("budgetplate.budget")
@@ -111,7 +112,6 @@ Return ONLY valid JSON in exactly this schema:
   "basket": [
     {{
       "id": <the deal's ID number from the list>,
-      "name": "<short everyday name for it, e.g. 'Chicken thighs'>",
       "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>
     }}
   ],
@@ -199,9 +199,10 @@ def servings_target(people, include_breakfast: bool = True) -> int:
         return per_person
 
 
-_BREAKFAST_GOAL = """- Breakfast: 7 of each person's servings are breakfasts ({breakfast_servings} in total). Keep them simple and
-  cheap, the kind of thing people really eat on a weekday: eggs, oats, toast, congee, yogurt and fruit. One or
-  two breakfasts repeated through the week is normal. Set "meal" to "breakfast" for these and "main" for
+_BREAKFAST_GOAL = """- Breakfast: 7 of each person's servings are breakfasts ({breakfast_servings} in total). Breakfasts must be
+  things people eat in the morning: eggs, oats, toast, congee, yogurt, fruit. NEVER put potatoes or onion in a
+  breakfast (no hash, no home fries). Keep them simple and cheap. One or two breakfasts repeated through the
+  week is normal. Set "meal" to "breakfast" for these and "main" for
   lunches and dinners.
 """
 
@@ -309,6 +310,15 @@ def pack_size(deal: dict) -> str | None:
     return f"{int(count.group(1))} pack" if count and int(count.group(1)) > 1 else None
 
 
+def display_name(deal: dict) -> str:
+    """The deal's name as shown to the shopper: its clean_name from the flyer
+    data, minus the origin and per-kg text flyers append ("Product of Usa",
+    "4.41/kg", "Selected Varieties")."""
+    name = deal.get("clean_name") or ""
+    short = re.sub(r"\s{2,}", " ", _ORIGIN_RE.sub(" ", name)).strip(" ,-")
+    return short or name.strip()
+
+
 def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) -> dict:
     """Turn the model's choices into the plan the API returns.
 
@@ -347,7 +357,10 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
             continue
         lines[deal_id] = {
             "deal_id": deal_id,
-            "name": str(entry.get("name") or deal.get("clean_name") or "").strip(),
+            # Always the flyer's name for the deal with this ID. Whatever the
+            # model calls it is ignored, so a comment or a wrong product
+            # can't end up on the shopping list.
+            "name": display_name(deal),
             "deal_name": deal.get("clean_name"),
             # The flyer's own name for the listing this product came from.
             "source_name": deal.get("source_name") or deal.get("clean_name"),
@@ -421,16 +434,194 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
     }
 
 
-def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None) -> dict:
-    """Ask Claude for the week's plan and return it priced from the flyer.
+# How often a plan needed a correction, since this process started. A retry is
+# a second full plan call; a rename is a small call that only fixes meal names.
+_plans_made = 0
+_plans_retried = 0
+_plans_renamed = 0
+
+RENAME_SYSTEM_PROMPT = (
+    "You name home-cooked meals accurately. You ONLY ever respond with valid JSON."
+)
+RENAME_MAX_TOKENS = 400
+
+
+def _retry_note(problems: list[dict]) -> str:
+    lines = "\n".join(f"- {p['detail']}" for p in problems)
+    return (
+        "That plan has problems. Fix ONLY these and return the complete corrected plan as JSON in the "
+        "same schema, with nothing else:\n"
+        f"{lines}\n"
+        "Change the meals or the basket as needed (choose deals by ID from the list) and keep the "
+        "basket within the budget."
+    )
+
+
+def _add_stats(total: dict, stats: dict) -> None:
+    """Fold one call's stats into the running totals for the request."""
+    total["model"] = total.get("model") or stats.get("model")
+    total["calls"] = total.get("calls", 0) + 1
+    for key in ("input_tokens", "output_tokens", "claude_ms"):
+        if stats.get(key) is not None:
+            total[key] = (total.get(key) or 0) + stats[key]
+    if stats.get("first_text_ms") is not None:
+        total.setdefault("first_text_ms", stats["first_text_ms"])
+
+
+def _checked(raw, deals: list[dict], profile: dict) -> tuple[dict, dict]:
+    return validate_plan(finalize_plan(raw, deals, profile), profile)
+
+
+def _hard_problems(report: dict) -> list[dict]:
+    """Problems only a new plan can settle (a new name can't)."""
+    return [p for p in report["problems"] if p["type"] not in RENAMEABLE]
+
+
+def _second_attempt(prompt: str, raw, problems: list[dict], deals, profile, model, stats) -> tuple[dict, dict] | None:
+    """Ask once for a corrected plan. None if that call can't be used."""
+    follow_up = [
+        {"role": "assistant", "content": json.dumps(raw)},
+        {"role": "user", "content": _retry_note(problems)},
+    ]
+    try:
+        raw2 = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model,
+                                follow_up=follow_up)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        logger.warning("budget plan retry failed (%s); keeping the first plan", exc.reason)
+        return None
+    _add_stats(stats, last_call_stats())
+    return _checked(raw2, deals, profile)
+
+
+def _rename_prompt(flagged: list[tuple[int, dict, list[str]]]) -> str:
+    meals = "\n".join(
+        f"{number}. \"{meal['name']}\" is made from: "
+        f"{', '.join((meal.get('uses') or []) + (meal.get('from_home') or [])) or 'nothing listed'}. "
+        f"Its name mentions {', '.join(labels)}, which it does not contain."
+        for number, meal, labels in flagged
+    )
+    return (
+        "These meal names promise ingredients the meals do not contain. Give each one a short, accurate "
+        "name for the dish that those ingredients really make. Use only ingredients it is made from; "
+        "do not mention anything else.\n\n"
+        f"{meals}\n\n"
+        'Return ONLY JSON: {"names": [{"meal": <number>, "name": "<new name>"}]}'
+    )
+
+
+def _rename_meals(plan: dict, report: dict, profile: dict, model, stats: dict) -> tuple[dict, dict, int]:
+    """Fix meal names that promise a missing ingredient with one small call.
+
+    Only the flagged meals are sent (name and ingredients), not the plan. A new
+    name is kept only if it is more accurate than the old one. Returns the
+    plan, its fresh report and how many meals were renamed; any failure leaves
+    the plan as it was.
+    """
+    basket = plan["basket"]
+    flagged = []
+    for index, meal in enumerate(plan["meals"]):
+        labels = missing_named_ingredients(meal, basket)
+        if labels:
+            flagged.append((index + 1, meal, labels))
+    if not flagged:
+        return plan, report, 0
+    try:
+        reply = call_claude_json(_rename_prompt(flagged), system=RENAME_SYSTEM_PROMPT,
+                                 max_tokens=RENAME_MAX_TOKENS, model=model)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        logger.warning("meal rename call failed (%s); names left as they were", exc.reason)
+        return plan, report, 0
+    _add_stats(stats, last_call_stats())
+
+    wanted = {}
+    for entry in (reply.get("names") if isinstance(reply, dict) else None) or []:
+        if isinstance(entry, dict) and _number(entry.get("meal")) is not None:
+            wanted[int(_number(entry["meal"]))] = str(entry.get("name") or "").strip()
+    meals = [dict(meal) for meal in plan["meals"]]
+    renamed = []
+    for number, meal, labels in flagged:
+        new_name = wanted.get(number)
+        if not new_name or new_name == meal["name"]:
+            continue
+        if len(missing_named_ingredients({**meal, "name": new_name}, basket)) < len(labels):
+            renamed.append((meal["name"], new_name))
+            meals[number - 1]["name"] = new_name
+    if not renamed:
+        return plan, report, 0
+    logger.info("meal names corrected: %s", renamed)
+    fixed, new_report = validate_plan({**plan, "meals": meals}, profile)
+    new_report["fixes"] = report["fixes"] + new_report["fixes"]
+    return fixed, new_report, len(renamed)
+
+
+def _settle(first: tuple[dict, dict], second: tuple[dict, dict] | None, profile, model, stats: dict) -> dict:
+    """Choose between the first plan and the corrected one, fix names, record stats.
+
+    The corrected plan wins unless it has more problems than the first.
+    """
+    global _plans_made, _plans_retried, _plans_renamed
+    _plans_made += 1
+    plan, report = first
+    if second is not None:
+        _plans_retried += 1
+        if (len(_hard_problems(second[1])), len(second[1]["problems"])) <= \
+                (len(_hard_problems(report)), len(report["problems"])):
+            plan, report = second
+    plan, report, renamed = _rename_meals(plan, report, profile, model, stats)
+    _plans_renamed += bool(renamed)
+    stats.update(
+        retried=second is not None,
+        renames=renamed,
+        problems_first=len(first[1]["problems"]),
+        problems=len(report["problems"]),
+        fixes=len(report["fixes"]),
+    )
+    if report["fixes"] or first[1]["problems"] or second is not None:
+        logger.info(
+            "budget plan validation: retried=%s renames=%d fixes=%s problems_first=%s problems_left=%s "
+            "(so far: %d full retries and %d renamed plans in %d plans)",
+            second is not None, renamed, report["fixes"], [p["detail"] for p in first[1]["problems"]],
+            [p["detail"] for p in report["problems"]], _plans_retried, _plans_renamed, _plans_made,
+        )
+    return plan
+
+
+def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None,
+                         stats: dict | None = None) -> dict:
+    """Ask Claude for the week's plan and return it priced, checked and repaired.
 
     ``deals`` is the shortlist the model may choose from. ``model`` overrides
     the configured Claude model (``settings.CLAUDE_MODEL``) for this call only;
     leave it unset in production.
+
+    The reply is priced from the flyer (``finalize_plan``) and then checked
+    (``ai.plan_checks.validate_plan``), which repairs what Python can. Then:
+
+    - a problem that needs the plan changed (a breakfast with potatoes, a
+      basket that can't be brought under budget) gets ONE full retry, and the
+      better of the two plans is kept;
+    - a meal whose name promises a missing ingredient gets a small rename
+      call that sees only those meals.
+
+    ``stats``, if given, is filled with the tokens and time of all calls plus
+    ``retried``, ``renames``, ``problems`` and ``fixes``.
     """
+    stats = stats if stats is not None else {}
     prompt = build_budget_prompt(profile, deals)
-    raw = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)
-    return finalize_plan(raw, deals, profile)
+    try:
+        raw = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        raise
+    _add_stats(stats, last_call_stats())
+    first = _checked(raw, deals, profile)
+    second = None
+    hard = _hard_problems(first[1])
+    if hard:
+        second = _second_attempt(prompt, raw, hard, deals, profile, model, stats)
+    return _settle(first, second, profile, model, stats)
 
 
 class _ObjectScanner:
@@ -447,10 +638,13 @@ class _ObjectScanner:
         self._in_string = False
         self._escaped = False
         self._current: list[str] | None = None  # text of the object being read
+        self._finished = False  # the first top-level object has closed
 
     def feed(self, text: str) -> list[dict]:
         found = []
         for ch in text:
+            if self._finished:
+                break  # a second answer after the first is left to the final parse
             if self._current is not None:
                 self._current.append(ch)
             if self._in_string:
@@ -469,6 +663,8 @@ class _ObjectScanner:
                 self._stack.append(ch)
             elif ch in "}]" and self._stack:
                 self._stack.pop()
+                if not self._stack:
+                    self._finished = True
                 if ch == "}" and self._stack == ["{", "["] and self._current is not None:
                     try:
                         obj = json.loads("".join(self._current))
@@ -486,8 +682,10 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
     Yields ``("item", basket line)`` and ``("meal", meal)`` as each one is
     finished, already priced and cleaned by ``finalize_plan``, and finally
     ``("plan", (plan, stats))``: the fully validated plan, which is the source
-    of truth and replaces everything shown so far. Raises
-    ``ClaudeResponseError`` if the finished reply can't be used.
+    of truth and replaces everything shown so far. If the plan needs a full
+    correction call, ``("retry", {"problems": [...]})`` is yielded first; that
+    second call, and the small call that fixes meal names, are not streamed. Raises ``ClaudeResponseError`` if the first
+    reply can't be used.
     """
     prompt = build_budget_prompt(profile, deals)
     scanner = _ObjectScanner()
@@ -495,8 +693,16 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
     sent_ids: set[int] = set()
     for kind, payload in stream_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model):
         if kind == "done":
-            raw, stats = payload
-            yield "plan", (finalize_plan(raw, deals, profile), stats)
+            raw, call_stats = payload
+            stats: dict = {}
+            _add_stats(stats, call_stats)
+            first = _checked(raw, deals, profile)
+            second = None
+            hard = _hard_problems(first[1])
+            if hard:
+                yield "retry", {"problems": [p["detail"] for p in hard]}
+                second = _second_attempt(prompt, raw, hard, deals, profile, model, stats)
+            yield "plan", (_settle(first, second, profile, model, stats), stats)
             return
         for obj in scanner.feed(payload):
             if "uses" in obj or "servings" in obj:
