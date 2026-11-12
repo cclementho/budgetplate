@@ -17,12 +17,17 @@ const GROUP_ORDER = [
 // "2", "1.5": how many of a listing to buy, without trailing zeros.
 const qty = (v) => (v == null ? "1" : String(Number(Number(v).toFixed(2))));
 
-// "x2" for packs, "1.5 kg" for items sold by weight.
-const amount = (it) =>
-  it.sold_by_weight ? `${qty(it.quantity)} kg` : `x${qty(it.quantity)}`;
+// How much to buy, always as a weight or a count: "1.5 kg" when sold by
+// weight, "340 g" or "2 × 340 g" when the flyer gives a size, else "1 pack".
+const amount = (it) => {
+  const n = qty(it.quantity);
+  if (it.sold_by_weight) return `${n} kg`;
+  if (it.size) return n === "1" ? it.size : `${n} × ${it.size}`;
+  return n === "1" ? "1 pack" : `${n} packs`;
+};
 
 // Sections 2-4 of the results page:
-//   2. Your weekly basket (hero) — items, running total, budget verdict, swap
+//   2. Your weekly basket (hero): items, total, budget verdict, swap
 //   3. What you can make — cuisine-matched meals
 //   4. Your shopping list — grouped + copyable
 // Presentational only; receives the /budget-plan response as `result`.
@@ -36,29 +41,32 @@ export default function BudgetShop({ result, budget }) {
   const plan = result?.plan;
   const basket = plan?.basket || [];
   const meals = plan?.meals || [];
-  const total = result?.estimated_total ?? plan?.estimated_total;
-  const underBudget = result?.under_budget;
+  // While the plan is still being written, items and meals arrive one by one
+  // and the totals are added up here; the finished plan then replaces them.
+  const streaming = result?.streaming === true;
+  const total = streaming
+    ? basket.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0)
+    : result?.estimated_total ?? plan?.estimated_total;
+  const underBudget = streaming ? total <= budget : result?.under_budget;
   const swap = plan?.swap_suggestion;
-  // Lunch and dinner for a week is 14 servings per person.
-  const servingsTotal = plan?.servings_total;
+  // 14 servings per person a week (lunch, dinner), 21 with breakfast.
+  const withBreakfast = plan?.include_breakfast === true;
+  const servingsTotal = streaming
+    ? meals.reduce((sum, m) => sum + (m.servings || 0), 0)
+    : plan?.servings_total;
   const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
+  // Set when few of this week's deals fit the shopper's cuisines.
+  const cuisineNote = result?.cuisine_note;
 
-  if (!plan || basket.length === 0) {
+  if (!plan || (basket.length === 0 && !streaming)) {
     return (
       <p className="rounded-2xl border border-line bg-white p-6 text-center text-muted">
         {result?.message || "No weekly basket could be built for this store."}
       </p>
     );
   }
-
-  // Running total so the shopper sees where each dollar goes.
-  let running = 0;
-  const rows = basket.map((item) => {
-    running += Number(item.subtotal) || 0;
-    return { ...item, running };
-  });
 
   // Group items for the printable list.
   const grouped = GROUP_ORDER.map((group) => ({
@@ -101,16 +109,20 @@ export default function BudgetShop({ result, budget }) {
           </h2>
         </div>
         <p className="mt-1 pl-10 text-sm text-muted">
-          Built from this week's deals, matched to what you cook.
+          {streaming
+            ? "Picking from this week's deals…"
+            : "Built from this week's deals, matched to what you cook."}
         </p>
 
         <motion.div
           variants={stagger}
           initial="hidden"
           animate="show"
-          className="mt-4 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface shadow-soft"
+          className={`mt-4 divide-y divide-line overflow-hidden rounded-3xl border-line bg-surface shadow-soft ${
+            basket.length > 0 ? "border" : ""
+          }`}
         >
-          {rows.map((it, i) => (
+          {basket.map((it, i) => (
             <motion.div
               key={i}
               variants={item}
@@ -123,16 +135,14 @@ export default function BudgetShop({ result, budget }) {
                     ? `${qty(it.quantity)} kg × ${money(it.price)}/kg (${money(
                         it.listed_price
                       )}/${it.priced_per} on the flyer)`
-                    : `${qty(it.quantity)} × ${money(it.price)}`}
+                    : `${amount(it)} · ${money(it.price)}${
+                        qty(it.quantity) === "1" ? "" : " each"
+                      }`}
                 </p>
-                <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="tnum font-extrabold text-ink">
                   {money(it.subtotal)}
-                </p>
-                <p className="tnum text-xs text-muted">
-                  running {money(it.running)}
                 </p>
               </div>
             </motion.div>
@@ -142,7 +152,9 @@ export default function BudgetShop({ result, budget }) {
         {/* Budget meter + total */}
         <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-soft">
           <div className="flex items-end justify-between">
-            <span className="text-sm font-bold text-ink">Total this week</span>
+            <span className="text-sm font-bold text-ink">
+              {streaming ? "Total so far" : "Total this week"}
+            </span>
             <span
               className={`tnum text-3xl font-extrabold leading-none ${
                 underBudget ? "text-brand-deep" : "text-red-600"
@@ -171,10 +183,15 @@ export default function BudgetShop({ result, budget }) {
               underBudget ? "text-brand-deep" : "text-red-600"
             }`}
           >
-            {underBudget ? (
+            {streaming ? (
+              <span className="font-medium text-muted" aria-live="polite">
+                Still building your basket…
+              </span>
+            ) : underBudget ? (
               <>
                 <Check size={17} />
-                You came in under budget by {money(budget - total)} this week.
+                This week costs {money(total)}. That leaves{" "}
+                {money(budget - total)} of your budget free.
               </>
             ) : (
               <>Over budget by {money(total - budget)}</>
@@ -205,16 +222,28 @@ export default function BudgetShop({ result, budget }) {
       </motion.section>
 
       {/* SECTION 3 — WHAT YOU CAN MAKE */}
-      {meals.length > 0 && (
+      {(meals.length > 0 || streaming) && (
         <motion.section variants={fadeUp} initial="hidden" animate="show">
           <h2 className="text-xl font-extrabold tracking-tight text-ink">
             What you can make
           </h2>
+          {cuisineNote && (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl bg-accent-light px-3.5 py-3 text-sm font-medium text-accent-deep">
+              <Bulb size={18} className="mt-0.5 shrink-0" />
+              <span>{cuisineNote}</span>
+            </div>
+          )}
+          {streaming && meals.length === 0 && (
+            <p className="mt-1 text-sm text-muted">
+              Meals will appear here once the basket is picked.
+            </p>
+          )}
           {servingsTotal > 0 && servingsTarget > 0 && (
             <p className="mt-1 text-sm text-muted">
               About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
               servings, planned for{" "}
-              <span className="tnum">{servingsTarget}</span> (lunch and dinner
+              <span className="tnum">{servingsTarget}</span> (
+              {withBreakfast ? "breakfast, lunch and dinner" : "lunch and dinner"}{" "}
               for 7 days).
             </p>
           )}
@@ -234,6 +263,7 @@ export default function BudgetShop({ result, budget }) {
                   <h3 className="font-extrabold text-ink">{m.name}</h3>
                   <span className="tnum shrink-0 rounded-full bg-brand-tint px-2.5 py-1 text-xs font-bold text-brand-deep">
                     {[
+                      m.meal === "breakfast" && "Breakfast",
                       m.servings > 0 &&
                         `${m.servings} ${m.servings === 1 ? "serving" : "servings"}`,
                       m.appliance,

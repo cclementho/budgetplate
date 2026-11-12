@@ -44,7 +44,7 @@ _NON_FOOD = _words(
     "bouquet", "flower", "plant", "rose", "tropical", r"\d+\"\s*pot", "cling wrap", "foil", "parchment", "napkin", "paper towel",
     "tissue", "garbage bag", "trash bag", "freezer bag", "sandwich bag", "cutlery",
     "candle", "batter(?:y|ie)", "light bulb", "pet", "dog food", "cat food", "dog treat",
-    "cat treat", "kitten", "puppy",
+    "cat treat", "kitten", "puppy", "milk-?bone", "fir tip", "stainless steel", "glassware", "ricola", "sauce ?pan", "hatching",
     "litter", "vitamin", "supplement", "advil", "tylenol", "reactine", "claritin", "allegra",
     "benadryl", "razor", "shampoo", "conditioner", "lotion", "deodorant", "toothpaste",
     "toothbrush", "diaper", "wipe", "soap", "detergent", "cleaner", "bleach", "toy", "plush",
@@ -57,7 +57,7 @@ _SNACK_OR_DRINK = _words(
     "cupcake", "pie", "donut", "doughnut", "dessert", "macaroon", "swiss roll", "pudding",
     "jell-?o", "jelly powder", "ice cream", "popsicle", "novelt(?:y|ie)", "granola bar",
     "protein bar", "chocolate bar", "candy bar", "nature valley",
-    "turtle", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
+    "turtle", "brandy bean", "bubly", "ginger ale", "smartwater", "vitaminwater", "gatorade", "brio", "wafer", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
     "garden cocktail", "juice cocktail", "cranberry cocktail", "cocktail mix", "clamato", "juice", "nectar", "lassi", "energy drink", "drink", "beverage", "iced tea",
     "coffee", "espresso", "k-cup", "tea", "water", "kombucha", "beer", "wine", "cider",
 )
@@ -141,6 +141,48 @@ CUISINE_KEYWORDS = {
 }
 
 
+# The ingredients that make a cuisine that cuisine, used only to judge whether
+# the store has much for it this week. Stricter than CUISINE_KEYWORDS, which
+# also boosts everyday items (pork, garlic, eggs) that say nothing about a
+# cuisine being well served.
+CUISINE_STAPLES = {
+    "Chinese": _words(
+        "tofu", "bok choy", "gai lan", "napa", "ginger", "scallion", "green onion", "soy sauce",
+        "sesame", "hoisin", "oyster sauce", "dumpling", "wonton", "noodle", "chow mein",
+        "shiitake", "bean sprout", "five spice", "congee", "chinese",
+    ),
+    "South Asian": _words(
+        "lentil", "dal", "chickpea", "basmati", "paneer", "naan", "roti", "paratha", "ghee",
+        "curry", "masala", "turmeric", "cumin", "coriander", "methi", "okra", "atta",
+    ),
+    "Middle Eastern": _words(
+        "chickpea", "lentil", "pita", "hummus", "tahini", "lamb", "eggplant", "feta", "olive",
+        "bulgur", "couscous", "falafel", "halal", "za'?atar", "sumac",
+    ),
+    "Mexican": _words(
+        "tortilla", "bean", "salsa", "avocado", "cilantro", "lime", "jalape[nñ]o", "taco",
+        "chorizo", "corn",
+    ),
+    "Italian": _words(
+        "pasta", "spaghetti", "penne", "lasagna", "gnocchi", "passata", "basil", "mozzarella",
+        "parmesan", "ricotta", "olive oil", "italian sausage", "pesto", "tomato sauce",
+        "tomato paste",
+    ),
+    "American": _words(
+        "ground beef", "cheddar", "bacon", "burger", "bun", "hot dog", "wiener", "macaroni",
+        "potato", "corn", "turkey", "chicken",
+    ),
+    "Korean": _words(
+        "tofu", "kimchi", "gochujang", "sesame", "napa", "scallion", "green onion", "noodle",
+        "radish", "short rib", "korean",
+    ),
+    "Japanese": _words(
+        "tofu", "udon", "soba", "ramen", "noodle", "miso", "nori", "seaweed", "panko",
+        "teriyaki", "edamame", "salmon", "sushi", "japanese",
+    ),
+}
+
+
 def bucket_for(deal: dict) -> str | None:
     """Which bucket a deal belongs to, or None when it shouldn't be offered."""
     name = deal.get("clean_name") or ""
@@ -185,13 +227,195 @@ def _cuisine_patterns(cuisines) -> list[re.Pattern]:
     return [CUISINE_KEYWORDS[c] for c in (cuisines or []) if c in CUISINE_KEYWORDS]
 
 
+# --- one candidate per product --------------------------------------------------
+#
+# A flyer line often sells several different products at one price ("White
+# Mushrooms 227 G, Mini Cucumbers or Baby Carrots"). Shown as one deal, the
+# model buys "mushrooms and carrots" for the price of one. Each product becomes
+# its own candidate with the same price and a link back to the listing.
+
+_PLACE = (
+    r"(?:ontario|quebec|british columbia|western canada|canada|u\.?s\.?a\.?|mexico|peru|chile|"
+    r"spain|morocco|south africa|china|guatemala|costa rica|ecuador|colombia|brazil|argentina|"
+    r"italy|india|new zealand|honduras|dominican republic)"
+)
+_ORIGIN_RE = re.compile(
+    rf"\bproduct of {_PLACE}(?:\s+(?:or|and)\s+{_PLACE})*|,?\s*(?:\bor\s+)?\b(?:canada|usa)\s+(?:no\.?\s*\d|extra fancy|fancy)(?:\s+grade)?"
+    r"|\b(?:no\.?\s*\d|extra fancy|fancy)\s+grade\b"
+    r"|\s-\s*freshco diwali|\b\d+(?:\.\d+)?/kg\b|\bselected variet\w*|\bany variet\w*|\bassorted variet\w*",
+    re.IGNORECASE,
+)
+_PART_SIZE_RE = re.compile(
+    r"\b\d+(?:\.\d+)?(?:\s*[-/x]\s*\d+(?:\.\d+)?)?\s*(?:kg|g|ml|l|lb|lbs|oz|pk|pack|'s|ct)\b",
+    re.IGNORECASE,
+)
+# Words that mean a part of a name is a product in its own right.
+_OTHER_NOUNS = _words(
+    "milk", "cheese", "yogurt", "yogourt", "egg", "butter", "cream", "dip", "hummus", "margarine",
+    "fruit", "vegetable", "pizza", "frie", "perogie", "waffle", "pancake", "samosa", "spring roll",
+    "seasoning", "dressing", "nugget", "fillet", "wing", "olive", "pickle", "kit",
+)
+
+
+def _is_product(part: str) -> bool:
+    """True when this piece of a listing names a product by itself.
+
+    "Baby Carrots" and "Sunrise Firm Tofu" do. "Whole White" (of "Whole White
+    or Brown Mushrooms") and a lone "Milk" (of "Milk or Dark Chocolate
+    Almonds") are descriptions of what follows.
+    """
+    words = re.findall(r"[A-Za-z][A-Za-z'&-]*", _PART_SIZE_RE.sub(" ", part))
+    if not words:
+        return False
+    if len(words) == 1 and not words[0].lower().endswith("s"):
+        return False
+    return any(
+        pattern.search(part)
+        for pattern in (*_BUCKET_WORDS.values(), _OTHER_NOUNS, _NON_FOOD, _SNACK_OR_DRINK)
+    )
+
+
+def split_listing(name: str) -> list[str]:
+    """The separate products a flyer name offers; one entry if it is one product.
+
+    Pieces that only describe the next piece stay attached to it, so "White or
+    Whole Wheat Bread 675 G or Buns" gives the bread and the buns, and "Brown
+    or White Sugar" is left whole.
+    """
+    text = re.sub(r"\s{2,}", " ", _ORIGIN_RE.sub(" ", name or "")).strip(" ,")
+    pieces = re.split(r"(\s*,\s*|\s+or\s+)", text, flags=re.IGNORECASE)
+    parts: list[str] = []
+    pending = ""  # describing pieces waiting for the product they belong to
+    for i in range(0, len(pieces), 2):
+        piece = pieces[i].strip()
+        joiner = pieces[i + 1] if i + 1 < len(pieces) else ""
+        if not piece:
+            continue
+        if not re.search(r"[A-Za-z]{2}", _PART_SIZE_RE.sub("", piece)) and parts and not pending:
+            parts[-1] = f"{parts[-1]} {piece}"  # a bare size belongs to what came before
+            continue
+        if _is_product(piece):
+            parts.append(pending + piece)
+            pending = ""
+        else:
+            pending += piece + (joiner if joiner.strip() else " ")
+    if pending:  # trailing description: part of the last product
+        tail = pending.strip(" ,")
+        tail = re.sub(r"\s+or$", "", tail, flags=re.IGNORECASE)
+        if parts:
+            parts[-1] = f"{parts[-1]} or {tail}"
+        else:
+            parts.append(tail)
+    if len(parts) < 2:
+        return [(name or "").strip()]
+    # When the listing ends in a snack, drink or non-food ("Mango or Guava
+    # Juice", "All Butter or Salted Fudge"), the earlier words are usually
+    # flavours of it, not products, so it is left whole.
+    if _NON_FOOD.search(parts[-1]) or _SNACK_OR_DRINK.search(parts[-1]):
+        return [(name or "").strip()]
+    return parts
+
+
+def expand_listings(deals: list[dict]) -> list[dict]:
+    """One row per product: multi-product listings become one row each.
+
+    Every row gets ``source_name`` (the flyer's own name) and ``source_key``
+    (shared by rows from the same listing). A split row keeps the listing's
+    price; its size and per-kg price are kept only when the size is printed in
+    that product's part of the name, since they describe one product.
+    """
+    rows: list[dict] = []
+    for index, deal in enumerate(deals):
+        name = deal.get("clean_name") or ""
+        key = deal.get("id", f"row-{index}")
+        parts = split_listing(name)
+        if len(parts) == 1:
+            rows.append({**deal, "source_name": name, "source_key": key})
+            continue
+        sized = [p for p in parts if _PART_SIZE_RE.search(p)]
+        for part in parts:
+            row = {**deal, "clean_name": part, "source_name": name, "source_key": key}
+            if not (len(sized) == 1 and part is sized[0]):
+                row["weight_kg"] = None
+                row["price_per_kg"] = None
+            # The parser's category describes the whole listing. It is kept
+            # where it protects the shopper (non-food, and meat or dairy for
+            # dietary restrictions); otherwise each product is judged by name.
+            if deal.get("category") not in _STICKY_CATEGORIES:
+                row["category"] = None
+            rows.append(row)
+    return rows
+
+
+_STICKY_CATEGORIES = {"Household", "Meat & Seafood", "Dairy & Eggs", "Snacks & Drinks"}
+
+
+# --- bulk packs for small households -------------------------------------------
+
+# A household of one or two can't use a 7 lb bag of onions in a week.
+SMALL_HOUSEHOLD = 2
+BULK_PACK_KG = 1.5
+_BULK_BUCKETS = ("produce", "grains_pantry", "other_food", "proteins")
+
+
+def _is_bulk_pack(deal: dict) -> bool:
+    if deal.get("priced_per"):  # sold by weight: the shopper chooses the amount
+        return False
+    if deal.get("category") == "Meat & Seafood":  # a whole chicken isn't a bulk buy
+        return False
+    try:
+        return float(deal.get("weight_kg") or 0) > BULK_PACK_KG
+    except (TypeError, ValueError):
+        return False
+
+
+# Below this many matching deals on the shortlist, the shopper is told the
+# store has little for their cuisine this week.
+MIN_CUISINE_MATCHES = 5
+
+
+def cuisine_match_count(deals: list[dict], cuisines: list[str] | None) -> int | None:
+    """How many of the deals are staples of the shopper's cuisines.
+
+    None when there is nothing to measure: no cuisine chosen, or only options
+    without keywords such as "Whatever is cheapest".
+    """
+    patterns = [CUISINE_STAPLES[c] for c in (cuisines or []) if c in CUISINE_STAPLES]
+    if not patterns:
+        return None
+    return sum(
+        1 for deal in deals if any(p.search(deal.get("clean_name") or "") for p in patterns)
+    )
+
+
+def cuisine_note(deals: list[dict], cuisines: list[str] | None, merchant: str) -> str | None:
+    """A short, honest heads-up when few shortlisted deals fit the cuisines."""
+    count = cuisine_match_count(deals, cuisines)
+    if count is None or count >= MIN_CUISINE_MATCHES:
+        return None
+    names = [c for c in cuisines if c in CUISINE_STAPLES]
+    label = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+    return (
+        f"Not many {label} staples on sale at {merchant} this week, "
+        "so some meals lean on what's cheap."
+    )
+
+
 def select_candidates(
-    deals: list[dict], cuisines: list[str] | None = None, limit: int = MAX_CANDIDATES
+    deals: list[dict],
+    cuisines: list[str] | None = None,
+    limit: int = MAX_CANDIDATES,
+    people: int | None = None,
 ) -> list[dict]:
     """Return at most ``limit`` deals: food only, balanced, best value first.
 
     ``deals`` are cleaned rows (clean_name, category, price, price_per_kg).
     The result is grouped by bucket; the input is not modified.
+
+    For one or two ``people``, produce and pantry packs over 1.5 kg are left
+    out (a 7 lb bag of onions, 5 lb of potatoes, 1.81 kg of lentils), unless
+    the bucket has no smaller option at all. Meat, dairy and anything sold by
+    weight are not affected.
     """
     patterns = _cuisine_patterns(cuisines)
 
@@ -205,6 +429,12 @@ def select_candidates(
         bucket = bucket_for(deal)
         if bucket is not None:
             buckets[bucket].append(deal)
+
+    if people is not None and people <= SMALL_HOUSEHOLD:
+        for bucket in _BULK_BUCKETS:
+            smaller = [d for d in buckets[bucket] if not _is_bulk_pack(d)]
+            if smaller:
+                buckets[bucket] = smaller
 
     ordered: dict[str, list[dict]] = {}
     for bucket, items in buckets.items():

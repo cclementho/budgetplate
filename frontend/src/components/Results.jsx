@@ -24,6 +24,8 @@ export default function Results({ profile, onBack }) {
   useEffect(() => {
     let active = true;
     let pollId = null;
+    // Leaving the page (or a new search) ends the plan request mid-stream.
+    const controller = new AbortController();
 
     // Pick the top-scored nearby store, then build its weekly basket.
     async function loadStores() {
@@ -66,9 +68,21 @@ export default function Results({ profile, onBack }) {
 
     async function loadStoreData(top) {
       setPhase("loading");
+      // The deals are only needed for the flyer date on the store card.
+      api
+        .getDeals(profile.postal, top.merchant)
+        .then((res) => active && setDeals(res.deals || []))
+        .catch(() => {});
       try {
-        const [plan, dealsRes] = await Promise.all([
-          api.budgetPlan({
+        // The basket and meals are shown as the model writes them. Each piece
+        // is already priced by the backend; the final response replaces them.
+        let partial = null;
+        const show = (next) => {
+          partial = next;
+          if (active) setPlanResult(next);
+        };
+        const plan = await api.budgetPlanStream(
+          {
             postal_code: profile.postal,
             merchant: top.merchant,
             budget: profile.budget,
@@ -77,12 +91,39 @@ export default function Results({ profile, onBack }) {
             restriction: profile.restriction,
             pantry: profile.pantry,
             appliances: profile.appliances,
-          }),
-          api.getDeals(profile.postal, top.merchant),
-        ]);
+            include_breakfast: profile.includeBreakfast !== false,
+          },
+          {
+            onStart: (info) => {
+              show({
+                ...info,
+                streaming: true,
+                plan: {
+                  basket: [],
+                  meals: [],
+                  servings_target: info.servings_target,
+                  include_breakfast: info.include_breakfast,
+                },
+              });
+              if (active) setPhase("ready");
+            },
+            onItem: (item) =>
+              partial &&
+              show({
+                ...partial,
+                plan: { ...partial.plan, basket: [...partial.plan.basket, item] },
+              }),
+            onMeal: (meal) =>
+              partial &&
+              show({
+                ...partial,
+                plan: { ...partial.plan, meals: [...partial.plan.meals, meal] },
+              }),
+          },
+          controller.signal
+        );
         if (!active) return;
         setPlanResult(plan);
-        setDeals(dealsRes.deals || []);
         setPhase("ready");
       } catch (e) {
         if (active) {
@@ -120,6 +161,7 @@ export default function Results({ profile, onBack }) {
     loadStores();
     return () => {
       active = false;
+      controller.abort();
       if (pollId) clearInterval(pollId);
     };
   }, [profile]);

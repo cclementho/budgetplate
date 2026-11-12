@@ -18,6 +18,8 @@ Every request is built by the production prompt code and sent the way production
 - `responses.jsonl`: raw responses;
 - `run.json`: the settings and prices used.
 
+To test several candidates in one run, repeat `--candidate` (and `--candidate-max-tokens`, in the same order). Production is then called once, and each candidate's price must be in the script's `PRICES` table.
+
 ## Ground rules
 
 These exist because the comparison is only useful if it is cheap, honest and comparable across months:

@@ -148,6 +148,7 @@ The app runs at **http://localhost:5173**.
 | GET    | `/api/items?postal_code=V7C4V9&query=chicken+breast`       | Search items, ranked by price-per-kg + distance |
 | GET    | `/api/stores?postal_code=V7C4V9`                           | Nearby supported stores with distance + deals  |
 | POST   | `/api/budget-plan`                                         | Build a weekly shop from a store's deals       |
+| POST   | `/api/budget-plan/stream`                                  | Same plan as server-sent events, as it's written |
 | GET    | `/api/deals?postal_code=V7C4V9&merchant=No+Frills`         | All deals at a store this week                 |
 
 Example:
@@ -424,7 +425,7 @@ psql budgetplate -f analytics/queries.sql
 # tests: a disposable database whose name must contain "test"
 createdb budgetplate_test
 pip install -r requirements-dev.txt
-pytest                             # 96 tests
+pytest                             # 243 tests
 ```
 
 ### Backfill
