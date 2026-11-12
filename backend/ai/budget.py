@@ -447,10 +447,13 @@ class _ObjectScanner:
         self._in_string = False
         self._escaped = False
         self._current: list[str] | None = None  # text of the object being read
+        self._finished = False  # the first top-level object has closed
 
     def feed(self, text: str) -> list[dict]:
         found = []
         for ch in text:
+            if self._finished:
+                break  # a second answer after the first is left to the final parse
             if self._current is not None:
                 self._current.append(ch)
             if self._in_string:
@@ -469,6 +472,8 @@ class _ObjectScanner:
                 self._stack.append(ch)
             elif ch in "}]" and self._stack:
                 self._stack.pop()
+                if not self._stack:
+                    self._finished = True
                 if ch == "}" and self._stack == ["{", "["] and self._current is not None:
                     try:
                         obj = json.loads("".join(self._current))

@@ -380,3 +380,31 @@ def test_the_model_is_not_asked_for_a_reason_and_one_it_sends_is_dropped():
     plan = finalize_plan({"basket": [{"id": 1, "quantity": 1, "why": "classic Chinese cut"}]}, DEALS, PROFILE)
     assert "why" not in plan["basket"][0]
     assert plan["basket"][0]["source_name"] == "Fresh Pork Shoulder Blade Roast"
+
+
+# --- recovering JSON from a messy reply -----------------------------------------
+
+def test_the_last_complete_json_object_is_used_when_the_model_answers_twice():
+    from ai.client import _extract_json
+
+    first = '{"basket": [{"id": 1, "quantity": 9}], "meals": []}'
+    second = '{"basket": [{"id": 1, "quantity": 2}], "meals": [{"name": "Braise", "uses": [1]}]}'
+    reply = f"```json\n{first}\n```\n\nWait, I need to recalculate. The total is over budget.\n\n```json\n{second}\n```"
+    assert _extract_json(reply)["basket"][0]["quantity"] == 2
+
+    # A second answer that was cut off: fall back to the last complete one.
+    assert _extract_json(first + "\n\nLet me fix that:\n" + second[:40])["basket"][0]["quantity"] == 9
+    # Prose around a single answer, braces inside strings, and plain JSON still work.
+    assert _extract_json('Here you go: {"basket": [], "note": "use {curly} braces"} Enjoy!')["note"] == "use {curly} braces"
+    assert _extract_json(first) == {"basket": [{"id": 1, "quantity": 9}], "meals": []}
+    assert _extract_json("[1, 2]") == [1, 2]
+    with pytest.raises(ValueError):
+        _extract_json("no json here {oops")
+
+
+def test_a_reply_with_two_answers_becomes_a_plan_not_a_502(claude):
+    first = '{"basket": [{"id": 2, "quantity": 9}], "meals": []}'
+    second = '{"basket": [{"id": 2, "quantity": 1}], "meals": [{"name": "Greens", "servings": 2, "uses": [2]}]}'
+    claude.response = fake_response(text=f"{first}\n\nWait, I need to recalculate.\n\n{second}")
+    plan = generate_budget_plan(PROFILE, DEALS)
+    assert plan["basket"][0]["quantity"] == 1 and plan["meals"][0]["name"] == "Greens"
