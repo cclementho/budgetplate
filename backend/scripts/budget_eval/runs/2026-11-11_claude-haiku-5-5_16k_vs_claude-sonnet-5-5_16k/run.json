@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-11",
+  "cases_file": "budget_eval/cases.json",
+  "flyer_week": "2026-10-08",
+  "n_cases": 10,
+  "postal_code": "M5S1Z9",
+  "price_source": "https://platform.claude.com/docs/en/about-claude/pricing.md",
+  "price_verified": "2026-11-11",
+  "arms": {
+    "production": {
+      "model": "claude-haiku-4-5",
+      "max_tokens": 4096,
+      "effort": null
+    },
+    "candidate": {
+      "model": "claude-haiku-5-5",
+      "max_tokens": 16000,
+      "effort": null
+    },
+    "candidate2": {
+      "model": "claude-sonnet-5-5",
+      "max_tokens": 16000,
+      "effort": null
+    }
+  },
+  "prices": {
+    "claude-haiku-4-5": [
+      [
+        null,
+        1.0,
+        5.0
+      ]
+    ],
+    "claude-haiku-5-5": [
+      [
+        100000,
+        0.1,
+        0.5
+      ],
+      [
+        null,
+        0.5,
+        2.5
+      ]
+    ],
+    "claude-sonnet-5-5": [
+      [
+        null,
+        2.0,
+        10.0
+      ]
+    ]
+  },
+  "worst_case_usd": 2.0255194
+}

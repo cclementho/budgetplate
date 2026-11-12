@@ -1,4 +1,4 @@
-"""Compare two Claude models on the budget-plan feature, using frozen real flyer data.
+"""Compare Claude models on the budget-plan feature, using frozen real flyer data.
 
 Test harness only. Every request is built by the production prompt code
 (ai.budget.build_budget_prompt, SYSTEM_PROMPT) and sent the way production's
@@ -13,6 +13,11 @@ Usage (from backend/):
     python scripts/compare_budget_models.py compare --candidate ... --candidate-price IN OUT \
         [--candidate-max-tokens N] [--candidate-effort low] [--cases PATH] [--max-cost 1.00]
     python scripts/compare_budget_models.py compare --rescore scripts/budget_eval/runs/<run>
+
+    # Several candidates in one run (production is called once): repeat --candidate.
+    # Output limits pair up with candidates in order; prices come from PRICES.
+    python scripts/compare_budget_models.py compare --candidate claude-haiku-5-5 \
+        --candidate-max-tokens 16000 --candidate claude-sonnet-5-5 --candidate-max-tokens 16000
 
     # Refresh the test cases from the latest flyer batch (never overwrites the
     # frozen set unless --force; default output is cases_<flyer week>.json)
@@ -43,7 +48,9 @@ import anthropic  # noqa: E402
 
 from ai.budget import MAX_TOKENS as PRODUCTION_MAX_TOKENS  # noqa: E402
 from ai.budget import SYSTEM_PROMPT, build_budget_prompt, finalize_plan  # noqa: E402
-from ai.candidates import select_candidates  # noqa: E402
+from ai.candidates import (  # noqa: E402
+    _is_bulk_pack, bucket_for, expand_listings, select_candidates, split_listing,
+)
 from ai.client import _extract_json  # noqa: E402
 from config import settings  # noqa: E402
 
@@ -76,12 +83,13 @@ _LEGACY_ARM = {"claude-haiku-4-5": "haiku-4.5", "claude-haiku-5-5": "haiku-5.5"}
 def arm_of(resp: dict) -> str:
     return resp.get("arm") or _LEGACY_ARM[resp["model"]]
 
-# Verified 2026-10-19 from https://platform.claude.com/docs/en/about-claude/pricing.md
+# Verified 2026-11-11 from https://platform.claude.com/docs/en/about-claude/pricing.md
 # ($ per million tokens, standard first-party API). Haiku 5.5 has a second rate card
 # for prompts over 100,000 tokens.
 PRICES = {
     "claude-haiku-4-5": [(None, 1.00, 5.00)],
     "claude-haiku-5-5": [(100_000, 0.10, 0.50), (None, 0.50, 2.50)],
+    "claude-sonnet-5-5": [(None, 2.00, 10.00)],
 }
 COST_CEILING_USD = 1.00
 
@@ -204,13 +212,20 @@ def load_cases(path: str = CASES_FILE) -> tuple[dict, list[dict]]:
         )
     with open(path) as f:
         data = json.load(f)
-    by_id = {m: {d["id"]: d for d in deals} for m, deals in data["stores"].items()}
+    from routes.budget import _filter_deals
+
+    # One row per product, exactly as the route sees a store's deals.
+    data["expanded"] = {m: expand_listings(deals) for m, deals in data["stores"].items()}
     for c in data["cases"]:
-        store = by_id[c["profile"]["merchant"]]
-        c["deals"] = [store[i] for i in c["deal_ids_in_prompt"]]
-        # Same shortlist step the /budget-plan route applies before prompting.
-        c["candidates"] = select_candidates(c["deals"], c["profile"].get("cuisines"))
-        c["prompt"] = build_budget_prompt(c["profile"], c["candidates"])
+        profile = c["profile"]
+        # The same steps /budget-plan runs before prompting: split listings,
+        # drop dietary clashes and pantry items, then shortlist. (The frozen
+        # "deal_ids_in_prompt" predates these steps and is no longer used.)
+        c["deals"], _ = _filter_deals(
+            data["expanded"][profile["merchant"]], profile.get("restriction"), profile.get("pantry") or [])
+        c["candidates"] = select_candidates(
+            c["deals"], profile.get("cuisines"), people=profile.get("people"))
+        c["prompt"] = build_budget_prompt(profile, c["candidates"])
         c["prompt_sha"] = hashlib.sha256((SYSTEM_PROMPT + c["prompt"]).encode()).hexdigest()[:16]
     return data, data["cases"]
 
@@ -457,6 +472,64 @@ def schema_ok(plan) -> bool:
     return all(isinstance(m, dict) and isinstance(m.get("uses"), list) for m in meals)
 
 
+# Meal-name words that promise an ingredient, and what counts as having it.
+# A name is only checked for the words listed here, so an unusual dish is
+# never flagged just because the checker doesn't know it.
+_LEAFY = (r"greens?|bok choy|spinach|kale|lettuce|cabbage|gai lan|rapini|chard|saag|methi|arugula|"
+          r"romaine|collards?|napa|coleslaw|salad|watercress|yu choy|broccoli")
+NAME_INGREDIENTS = [
+    ("greens", r"\bgreens\b", _LEAFY),
+    ("egg", r"\beggs?\b(?! ?(?:noodles?|plants?|rolls?))|\bomelett?e\b|\bfrittata\b|\bscrambled?\b", r"\beggs?\b"),
+    ("chicken", r"\bchicken\b", r"chicken|drumstick|thigh|wings?\b"),
+    ("pork", r"\bpork\b", r"pork|picnic|\bham\b|bacon|side ribs|longanisa"),
+    ("beef", r"\bbeef\b", r"beef|steak|brisket|\bchuck\b|sirloin|oxtail|\bround\b|rib roast|short rib"),
+    ("turkey", r"\bturkey\b", r"turkey"),
+    ("tofu", r"\btofu\b", r"tofu|bean curd"),
+    ("fish", r"\bfish\b|\bsalmon\b|\btilapia\b|\btuna\b|\bbasa\b|\bcod\b",
+     r"fish|salmon|tilapia|tuna|basa|\bcod\b|haddock|trout|sardine|mackerel|herring|pollock|sole"),
+    ("shrimp", r"\bshrimps?\b|\bprawns?\b", r"shrimp|prawn"),
+    ("sausage", r"\bsausages?\b", r"sausage|wiener|longanisa|chorizo|kolbassa|hot dog|frank"),
+    ("bacon", r"\bbacon\b", r"bacon"),
+    ("mushroom", r"\bmushrooms?\b", r"mushroom"),
+    ("potato", r"\bpotato(?:es)?\b|\bhash ?browns?\b", r"potato|hash ?brown|fries"),
+    ("tomato", r"\btomato(?:es)?\b", r"tomato|passata|salsa|marinara|pasta sauce"),
+    ("carrot", r"\bcarrots?\b", r"carrot"),
+    ("onion", r"\bonions?\b", r"onion|scallion|shallot|leek"),
+    ("cabbage", r"\bcabbage\b", r"cabbage|coleslaw|napa"),
+    ("spinach", r"\bspinach\b", r"spinach|saag|palak"),
+    ("broccoli", r"\bbroccoli\b", r"broccoli"),
+    ("cauliflower", r"\bcauliflower\b", r"cauliflower"),
+    ("eggplant", r"\beggplants?\b", r"eggplant|aubergine"),
+    ("zucchini", r"\bzucchini\b", r"zucchini"),
+    ("cucumber", r"\bcucumbers?\b", r"cucumber"),
+    ("corn", r"\bcorn\b(?! ?starch)", r"\bcorn\b"),
+    ("bell pepper", r"\bbell peppers?\b|\bpeppers\b", r"pepper"),
+    ("rice", r"(?<!cauliflower )\brice\b(?! ?(?:noodles?|vinegar|paper))|\bcongee\b", r"\brice\b"),
+    ("noodles", r"\bnoodles?\b|\bramen\b|\bchow mein\b|\blo mein\b",
+     r"noodle|ramen|udon|chow mein|spaghetti|pasta|vermicelli|bihon|linguine"),
+    ("pasta", r"\bpasta\b|\bspaghetti\b|\bpenne\b|\bmacaroni\b|\blasagna\b",
+     r"pasta|spaghetti|penne|macaroni|lasagna|noodle|rotini|fusilli|linguine|fettuccine|gnocchi"),
+    ("beans", r"\bbeans?\b(?! ?sprouts?)", r"\bbeans?\b|chickpea|lentil"),
+    ("lentils", r"\blentils?\b|\bdal\b|\bdaal\b", r"lentil|\bdal\b|daal"),
+    ("chickpeas", r"\bchickpeas?\b|\bchana\b", r"chickpea|chana|garbanzo"),
+    ("cheese", r"\bcheese\b|\bcheesy\b|\bcheddar\b|\bmozzarella\b|\bpaneer\b",
+     r"cheese|cheddar|mozzarella|paneer|feta|parmesan|havarti|gouda|brie|swiss|singles|cheez|velveeta"),
+    ("yogurt", r"\byog(?:h)?o?urt\b|\braita\b", r"yog(?:h)?o?urt|dahi|skyr|kefir"),
+    ("toast", r"\btoast\b|\bsandwich(?:es)?\b", r"bread|toast|\bbuns?\b|bagel|baguette|naan|pita|sourdough|muffin|loaf|roll|tortilla|wrap"),
+    ("oats", r"\boats?\b|\boatmeal\b|\bporridge\b", r"\boats?\b|oatmeal|porridge"),
+    ("banana", r"\bbananas?\b", r"banana"),
+    ("apple", r"\bapples?\b", r"apple"),
+    ("curry", r"\bcurr(?:y|ied|ies)\b",
+     r"curry|masala|garam|turmeric|cumin|coriander|korma|tikka|vindaloo|madras|jerk|spice"),
+    ("peanut butter", r"\bpeanut butter\b", r"peanut butter"),
+    ("milk", r"\bmilk\b(?! ?bread)", r"\bmilk\b"),
+]
+NAME_INGREDIENTS = [(label, re.compile(said, re.I), re.compile(has, re.I)) for label, said, has in NAME_INGREDIENTS]
+
+_COOKED_ONION = re.compile(
+    r"saut[eé]|fr(?:y|ied|ying)|cook|caramel|soften|brown|simmer|bake|roast|scrambl|omelet|grill", re.I)
+
+
 def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], list[dict]]:
     """Return (violations, review_flags) for one plan. Nothing is fixed."""
     profile = case["profile"]
@@ -470,7 +543,10 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
     def r(kind, detail):
         review.append({"type": kind, "detail": detail})
 
+    from routes.budget import _is_pantry_item, _pantry_terms
+
     pantry_re = wordre([re.escape(t) for t in pantry]) if pantry else None
+    pantry_terms = _pantry_terms(pantry)
     basket = plan.get("basket") or []
     basket_names = [norm(it.get("name", "")) for it in basket]
 
@@ -493,9 +569,33 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
         elif NON_FOOD_UNSURE.search(name):
             r("maybe_non_food", label)
 
-        # Already at home.
-        if pantry_re and pantry_re.search(name):
+        # Already at home: the product itself, not just a word in its name.
+        if pantry_terms and _is_pantry_item(it.get("deal_name") or name, pantry_terms):
             v("pantry_item_in_basket", f"{label} matches 'already at home' {pantry}")
+
+        # A bulk pack for a household of one or two.
+        if deal and profile["people"] <= 2 and _is_bulk_pack(deal) \
+                and bucket_for(deal) in ("produce", "grains_pantry", "other_food", "proteins"):
+            v("bulk_pack_small_household",
+              f"{label}: {deal['clean_name']!r} is {deal['weight_kg']:g} kg for {profile['people']} people")
+
+        # One line bought as several products: the model's name for the line
+        # names more than one of the listing's alternatives, or joins two things.
+        parts = split_listing(it.get("source_name") or "")
+        # Buying one alternative ("White potatoes" from "White Potatoes or
+        # Yellow Potatoes") is fine; the name must use words that belong to
+        # two different alternatives. Two or more units can be one of each.
+        head = lambda text: {w.rstrip("s") for w in tokens(text) if len(w) > 3}
+        said = head(name)
+        own = [head(p) - set().union(*(head(q) for q in parts if q is not p)) for p in parts]
+        several = sum(1 for words in own if words & said) > 1
+        joined = re.search(r"\band\b|&|\+|/", name) and not re.search(r"\band\b|&", it.get("deal_name") or "")
+        single_unit = not it.get("sold_by_weight") and (it.get("quantity") or 1) < 2
+        if single_unit and len(parts) > 1 and several:
+            v("one_deal_as_multiple_products",
+              f"{label}: one line of the listing {it.get('source_name')!r}")
+        elif single_unit and joined:
+            v("one_deal_as_multiple_products", f"{label}: one unit of {it.get('deal_name')!r}")
 
     # Recipe ingredients come from the list (or from home, which the app's own rule 5 allows).
     for meal in plan.get("meals") or []:
@@ -510,6 +610,36 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
                 r("meal_uses_pantry_item", f"{meal.get('name')!r} uses {use!r} from home (allowed by the prompt's rule 5)")
                 continue
             v("meal_ingredient_not_in_basket", f"{meal.get('name')!r} uses {use!r}, which is not on the shopping list")
+
+    # The meal's name promises ingredients the meal doesn't have, and breakfast
+    # shouldn't be built on potatoes or raw onion.
+    by_name = {norm(it.get("name", "")): it for it in basket}
+    for meal in plan.get("meals") or []:
+        having = []
+        for use in meal.get("uses") or []:
+            line = by_name.get(norm(use), {})
+            having += [use, line.get("deal_name") or ""]
+        having += meal.get("from_home") or []
+        has_text = " | ".join(having)
+        meal_name = meal.get("name", "")
+        for label, said, has in NAME_INGREDIENTS:
+            if said.search(meal_name) and not has.search(has_text):
+                v("meal_name_ingredient_missing",
+                  f"{meal_name!r} names {label} but uses {(meal.get('uses') or []) + (meal.get('from_home') or [])}")
+        if meal.get("meal") == "breakfast":
+            if re.search(r"potato|hash ?brown", has_text, re.I):
+                v("breakfast_potato_or_raw_onion", f"breakfast {meal_name!r} contains potatoes: {meal.get('uses')}")
+            elif re.search(r"\bonions?\b", has_text, re.I):
+                if _COOKED_ONION.search(meal.get("instructions") or ""):
+                    r("breakfast_cooked_onion", f"breakfast {meal_name!r} cooks onion: {meal.get('instructions')!r}")
+                else:
+                    v("breakfast_potato_or_raw_onion",
+                      f"breakfast {meal_name!r} has onion and never cooks it: {meal.get('instructions')!r}")
+
+    # Enough food: the servings add up to most of the week.
+    target = plan.get("servings_target")
+    if target and (plan.get("servings_total") or 0) < 0.8 * target:
+        r("too_few_servings", f"{plan.get('servings_total')} servings for a target of {target}")
 
     # Within budget, using the route's own total (sum of line subtotals).
     total = round(sum(it["subtotal"] for it in basket if isinstance(it.get("subtotal"), (int, float))), 2)
@@ -556,6 +686,8 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
 VIOLATION_TYPES = [
     "item_not_on_flyer", "price_not_on_flyer", "meal_ingredient_not_in_basket",
     "pantry_item_in_basket", "over_budget", "non_food_item", "not_vegetarian", "contains_dairy",
+    "meal_name_ingredient_missing", "bulk_pack_small_household", "one_deal_as_multiple_products",
+    "breakfast_potato_or_raw_onion",
 ]
 
 
@@ -577,7 +709,7 @@ def report(data: dict, cases: list[dict], out_dir: str = OUT_DIR,
             "cost_usd": None, "latency_s": round(resp["latency_s"], 2),
             "stop_reason": resp.get("stop_reason"), "thinking_blocks": resp.get("thinking_blocks"),
             "parsed_json": False, "valid_output": False, "basket_items": None, "meals": None,
-            "basket_total": None, "violations": None, "review_flags": None, "error": resp.get("error"),
+            "basket_total": None, "servings": None, "servings_target": None, "violations": None, "review_flags": None, "error": resp.get("error"),
         }
         if resp.get("input_tokens") is not None:
             row["cost_usd"] = round(price_for(resp["model"], resp["input_tokens"], resp["output_tokens"]), 6)
@@ -596,10 +728,11 @@ def report(data: dict, cases: list[dict], out_dir: str = OUT_DIR,
                 pass
         if row["parsed_json"] and schema_ok(plan) and resp.get("stop_reason") == "end_turn":
             row["valid_output"] = True
-            viol, review = check(c, data["stores"][p["merchant"]], plan)
+            viol, review = check(c, data["expanded"][p["merchant"]], plan)
             row.update(
                 basket_items=len(plan["basket"]), meals=len(plan["meals"]),
                 basket_total=round(sum(i["subtotal"] for i in plan["basket"]), 2),
+                servings=plan.get("servings_total"), servings_target=plan.get("servings_target"),
                 violations=len(viol), review_flags=len(review),
             )
             for t in VIOLATION_TYPES:
@@ -665,6 +798,9 @@ def summarize_arm(rows: list[dict], vrows: list[dict], arm: str) -> dict:
         "violations": Counter(x["type"] for x in vrows if x["arm"] == arm and x["kind"] == "violation"),
         "flags": Counter(x["type"] for x in vrows if x["arm"] == arm and x["kind"] == "review"),
         "spend_share": (sum(r["basket_total"] / r["budget"] for r in ok) / len(ok)) if ok else None,
+        "servings_share": (sum((r.get("servings") or 0) / r["servings_target"] for r in ok
+                               if r.get("servings_target")) / len(ok)) if ok else None,
+        "plans_with_violations": sum(1 for r in ok if r["violations"]),
         "errors": [r["error"] for r in mr if r["error"]],
     }
 
@@ -695,11 +831,20 @@ def verdict(prod: dict, cand: dict) -> list[str]:
     return out
 
 
+def _compare_arms(meta_or_arms) -> list[str]:
+    """production first, then the candidates in the order they were given."""
+    names = list(meta_or_arms)
+    return ["production"] + sorted((n for n in names if n.startswith("candidate")),
+                                   key=lambda n: (len(n), n))
+
+
 def write_summary(run_dir: str, meta: dict, rows: list[dict], vrows: list[dict]) -> str:
-    prod, cand = summarize_arm(rows, vrows, "production"), summarize_arm(rows, vrows, "candidate")
-    A = {a: ARMS[a] for a in ("production", "candidate")}
+    arms = _compare_arms(meta["arms"])
+    S = {a: summarize_arm(rows, vrows, a) for a in arms}
+    A = {a: ARMS[a] for a in arms}
+    title = " and ".join(A[a]["model"] for a in arms[1:])
     lines = [
-        f"# Budget-plan model comparison: {A['candidate']['model']} vs {A['production']['model']}",
+        f"# Budget-plan model comparison: {title} vs {A['production']['model']}",
         "",
         f"- Date: {meta['date']}  |  cases: `{meta['cases_file']}` (flyer week {meta['flyer_week']}, "
         f"{meta['n_cases']} cases, postal code {meta['postal_code']})",
@@ -713,11 +858,12 @@ def write_summary(run_dir: str, meta: dict, rows: list[dict], vrows: list[dict])
         tiers = PRICES[cfg["model"]]
         lines.append(f"| {name} | `{cfg['model']}` | {cfg['max_tokens']:,} | {cfg['effort'] or 'default'} "
                      f"| ${tiers[0][1]:.2f} | ${tiers[0][2]:.2f} |")
-    lines += ["", "## Results", "",
-              "| | production | candidate |", "|---|---|---|"]
+    header = "| | " + " | ".join(f"{a} ({A[a]['model']})" for a in arms) + " |"
+    rule = "|---" * (len(arms) + 1) + "|"
+    lines += ["", "## Results", "", header, rule]
 
     def row(label, f):
-        lines.append(f"| {label} | {f(prod)} | {f(cand)} |")
+        lines.append(f"| {label} | " + " | ".join(f(S[a]) for a in arms) + " |")
 
     row("Valid plans", lambda x: f"{x['valid']}/{x['runs']}")
     row("Stop reasons", lambda x: ", ".join(f"{k} {v}" for k, v in x["stop_reasons"].items()))
@@ -728,22 +874,27 @@ def write_summary(run_dir: str, meta: dict, rows: list[dict], vrows: list[dict])
     row("Slowest call", lambda x: _secs(x["max_latency"]))
     row("Avg tokens in / out (out includes thinking)", lambda x: f"{x['avg_in']:,.0f} / {x['avg_out']:,.0f}")
     row("Rule violations", lambda x: str(sum(x["violations"].values())))
+    row("Plans with at least one violation", lambda x: str(x["plans_with_violations"]))
     row("Avg spend vs budget (valid plans)", lambda x: "n/a" if x["spend_share"] is None else f"{x['spend_share']:.0%}")
-    lines += ["", "### Violations by type", "", "| Type | production | candidate |", "|---|---|---|"]
+    row("Avg servings vs target (valid plans)", lambda x: "n/a" if x["servings_share"] is None else f"{x['servings_share']:.0%}")
+    lines += ["", "### Violations by type", "", header.replace("| |", "| Type |", 1), rule]
     for t in VIOLATION_TYPES:
-        lines.append(f"| {t} | {prod['violations'].get(t, 0)} | {cand['violations'].get(t, 0)} |")
+        lines.append(f"| {t} | " + " | ".join(str(S[a]["violations"].get(t, 0)) for a in arms) + " |")
     lines += ["", "### Every violation", ""]
     vio = [x for x in vrows if x["kind"] == "violation"]
     lines += [f"- **{x['arm']}**, {x['case_id']}, `{x['type']}`: {x['detail']}" for x in vio] or ["- none"]
     lines += ["", "### Review flags (not violations; check by hand)", ""]
-    for arm, summ in (("production", prod), ("candidate", cand)):
-        lines.append(f"- {arm}: " + (", ".join(f"{k} {v}" for k, v in summ["flags"].items()) or "none"))
+    for arm in arms:
+        lines.append(f"- {arm}: " + (", ".join(f"{k} {v}" for k, v in S[arm]["flags"].items()) or "none"))
     worth = [x for x in vrows if x["kind"] == "review"
              and x["type"] not in ("item_name_reworded", "meal_uses_pantry_item")]
     lines += [f"  - {x['arm']}, {x['case_id']}, `{x['type']}`: {x['detail']}" for x in worth]
-    if prod["errors"] or cand["errors"]:
-        lines += ["", "### API errors", ""] + [f"- {e}" for e in prod["errors"] + cand["errors"]]
-    lines += ["", "## Mechanical verdict", ""] + [f"- {v}" for v in verdict(prod, cand)]
+    errors = [e for a in arms for e in S[a]["errors"]]
+    if errors:
+        lines += ["", "### API errors", ""] + [f"- {e}" for e in errors]
+    lines += ["", "## Mechanical verdict", ""]
+    for a in arms[1:]:
+        lines += [f"- {a} ({A[a]['model']}): {v}" for v in verdict(S["production"], S[a])]
     lines += ["", "## Recommendation", "", "_To be written after reading the results above._", ""]
     path = os.path.join(run_dir, "summary.md")
     with open(path, "w") as f:
@@ -757,8 +908,15 @@ def _slug(model: str, max_tokens: int, effort: str | None) -> str:
 
 
 def compare(args) -> int:
-    for model, price, tier in ((args.candidate, args.candidate_price, args.candidate_price_over),
-                               (settings.CLAUDE_MODEL, args.production_price, args.production_price_over)):
+    candidates = args.candidate
+    limits = args.candidate_max_tokens or []
+    if len(limits) > len(candidates):
+        raise SystemExit("More --candidate-max-tokens values than --candidate models.")
+    if len(candidates) > 1 and (args.candidate_price or args.candidate_effort):
+        raise SystemExit("With several candidates, prices must be in the PRICES table and no effort can be set.")
+    for model, price, tier in [(candidates[0], args.candidate_price, args.candidate_price_over),
+                               (settings.CLAUDE_MODEL, args.production_price, args.production_price_over),
+                               *[(m, None, None) for m in candidates[1:]]]:
         if price:
             tiers = [(int(tier[0]), float(tier[1]), float(tier[2]))] if tier else []
             PRICES[model] = ([(tiers[0][0], *map(float, price))] + [(None, tiers[0][1], tiers[0][2])]
@@ -770,10 +928,13 @@ def compare(args) -> int:
         raise SystemExit("--price-source is required when passing prices (the official pricing page URL).")
 
     ARMS["production"] = {"model": settings.CLAUDE_MODEL, "max_tokens": PRODUCTION_MAX_TOKENS, "effort": None}
-    ARMS["candidate"] = {"model": args.candidate,
-                         "max_tokens": args.candidate_max_tokens or PRODUCTION_MAX_TOKENS,
-                         "effort": args.candidate_effort}
-    arms = ["production", "candidate"]
+    arms = ["production"]
+    for i, model in enumerate(candidates):
+        name = "candidate" if i == 0 else f"candidate{i + 1}"
+        ARMS[name] = {"model": model,
+                      "max_tokens": limits[i] if i < len(limits) else PRODUCTION_MAX_TOKENS,
+                      "effort": args.candidate_effort if i == 0 else None}
+        arms.append(name)
     data, cases = load_cases(args.cases)
     if args.limit:
         cases = cases[:args.limit]
@@ -793,7 +954,8 @@ def compare(args) -> int:
         return 0
 
     today = dt.date.today().isoformat()
-    run_dir = os.path.join(RUNS_DIR, f"{today}_{_slug(args.candidate, ARMS['candidate']['max_tokens'], args.candidate_effort)}")
+    run_dir = os.path.join(RUNS_DIR, today + "_" + "_vs_".join(
+        _slug(ARMS[a]["model"], ARMS[a]["max_tokens"], ARMS[a]["effort"]) for a in arms[1:]))
     os.makedirs(run_dir, exist_ok=True)
     meta = {"date": today, "cases_file": os.path.relpath(args.cases, os.path.dirname(__file__)),
             "flyer_week": data["flyer_week"], "n_cases": len(cases), "postal_code": data["postal_code"],
@@ -830,8 +992,10 @@ def main() -> int:
     ap.add_argument("--arms", nargs="+", choices=list(ARMS), default=list(ARMS),
                     help="estimate/run/report: which fixed setups (default: all)")
     g = ap.add_argument_group("compare")
-    g.add_argument("--candidate", help="candidate model ID, e.g. claude-sonnet-5-5")
-    g.add_argument("--candidate-max-tokens", type=int, help=f"default: production's ({PRODUCTION_MAX_TOKENS})")
+    g.add_argument("--candidate", action="append",
+                   help="candidate model ID, e.g. claude-sonnet-5-5; repeat to test several in one run")
+    g.add_argument("--candidate-max-tokens", type=int, action="append",
+                   help=f"default: production's ({PRODUCTION_MAX_TOKENS}); repeat in the same order as --candidate")
     g.add_argument("--candidate-effort", choices=["low", "medium", "high", "xhigh", "max"],
                    help="default: none sent (the model's default effort)")
     g.add_argument("--candidate-price", nargs=2, metavar=("IN", "OUT"), help="$ per million tokens, verified")
