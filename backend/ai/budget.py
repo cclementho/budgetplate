@@ -117,6 +117,14 @@ HARD RULES (never break these)
    baking. Shop accordingly: don't buy a roast without an oven, or dried
    beans that need hours of simmering without a stovetop or Instant Pot.
    "appliance" must be exactly one name from the shopper's list.
+8. REAL RECIPES ONLY. Every meal must be a recognizable dish a normal person
+   would cook and could look up by its name, made with the ingredients that
+   dish actually needs. The name must match what is in it: no "noodle soup
+   with greens" without greens, no curry without curry spices, no "pork
+   belly" made from a different cut. If a dish needs an ingredient that is
+   not in the basket, not at home and not on the deal list, choose a
+   different dish. If a deal doesn't fit a real dish, leave it out of the
+   basket instead of forcing it into a meal.
 
 OTHER RULES
 - PRIORITISE ingredients common to the shopper's cuisines when several deals

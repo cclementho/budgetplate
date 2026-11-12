@@ -311,3 +311,10 @@ def test_breakfasts_are_labelled_and_the_route_takes_the_toggle(claude, monkeypa
     body = client.post("/api/budget-plan", json={**base, "include_breakfast": False}).json()
     assert body["plan"]["servings_target"] == 14
     assert "lunches and dinners for this shopper" in claude.requests[-1]["messages"][0]["content"]
+
+
+def test_prompt_demands_real_recipes():
+    prompt = build_budget_prompt(PROFILE, DEALS)
+    assert "8. REAL RECIPES ONLY" in prompt
+    assert "recognizable dish" in prompt and "ingredients that\n   dish actually needs" in prompt
+    assert "leave it out of the\n   basket instead of forcing it into a meal" in prompt
