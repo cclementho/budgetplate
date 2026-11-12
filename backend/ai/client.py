@@ -8,6 +8,8 @@ consistent.
 import json
 import logging
 import re
+import threading
+import time
 
 import anthropic
 
@@ -16,6 +18,15 @@ from config import settings
 logger = logging.getLogger("budgetplate.ai")
 
 _client: anthropic.Anthropic | None = None
+
+# Stats of the most recent Claude call made on this thread (model, tokens,
+# milliseconds), so a route can put them in its own timing log line.
+_last_call = threading.local()
+
+
+def last_call_stats() -> dict:
+    """Stats for the latest ``call_claude_json`` on this thread ({} if none)."""
+    return dict(getattr(_last_call, "stats", {}))
 
 
 class ClaudeResponseError(Exception):
@@ -89,7 +100,10 @@ def call_claude_json(
     if system:
         kwargs["system"] = system
 
+    _last_call.stats = {}
+    started = time.perf_counter()
     response = client.messages.create(**kwargs)
+    elapsed_ms = round((time.perf_counter() - started) * 1000)
     # Read text blocks only: newer models (e.g. Haiku 5.5) put thinking blocks first.
     text = "".join(block.text for block in response.content if block.type == "text")
 
@@ -97,8 +111,16 @@ def call_claude_json(
     context = (
         f"model={kwargs['model']} stop_reason={response.stop_reason} max_tokens={max_tokens} "
         f"input_tokens={getattr(usage, 'input_tokens', None)} "
-        f"output_tokens={getattr(usage, 'output_tokens', None)} text_chars={len(text)}"
+        f"output_tokens={getattr(usage, 'output_tokens', None)} text_chars={len(text)} "
+        f"claude_ms={elapsed_ms}"
     )
+    _last_call.stats = {
+        "model": kwargs["model"],
+        "stop_reason": response.stop_reason,
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+        "claude_ms": elapsed_ms,
+    }
     if response.stop_reason == "max_tokens":
         logger.error("Claude response was cut off at max_tokens (thinking counts toward it): %s", context)
         raise ClaudeResponseError("max_tokens")
@@ -109,7 +131,9 @@ def call_claude_json(
         logger.error("Claude returned no text: %s", context)
         raise ClaudeResponseError("empty")
     try:
-        return _extract_json(text)
+        parsed = _extract_json(text)
     except ValueError:  # includes json.JSONDecodeError
         logger.error("Claude returned text that is not valid JSON: %s", context)
         raise ClaudeResponseError("invalid_json") from None
+    logger.info("Claude call ok: %s", context)
+    return parsed

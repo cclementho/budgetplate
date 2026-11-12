@@ -22,7 +22,7 @@ def get_items(postal_code: str, merchant: str | None = None) -> list[dict]:
     postal_code = _normalize_postal(postal_code)
     sql = """
         SELECT id, postal_code, merchant, original_name, clean_name, category,
-               price, price_per_kg, price_per_unit, weight_kg,
+               price, price_per_kg, price_per_unit, weight_kg, priced_per,
                valid_from, valid_to, scraped_at
         FROM flyer_items
         WHERE postal_code = %s

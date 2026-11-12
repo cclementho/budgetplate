@@ -45,6 +45,17 @@ const PANTRY_STAPLES = [
   "Soy sauce",
 ];
 
+// What the shopper can cook with. Every meal in the plan must work with only
+// these, so at least one stays selected.
+const APPLIANCES = [
+  "Stovetop",
+  "Oven",
+  "Microwave",
+  "Air fryer",
+  "Rice cooker",
+  "Instant Pot",
+];
+
 const MAX_CUISINES = 3;
 
 export default function Home({ onFindDeals }) {
@@ -55,6 +66,7 @@ export default function Home({ onFindDeals }) {
   const [restriction, setRestriction] = useState("No restriction");
   const [pantry, setPantry] = useState([]);
   const [pantryExtra, setPantryExtra] = useState("");
+  const [appliances, setAppliances] = useState(["Stovetop", "Oven"]);
   const [error, setError] = useState("");
 
   function toggleCuisine(c) {
@@ -62,6 +74,14 @@ export default function Home({ onFindDeals }) {
       if (prev.includes(c)) return prev.filter((x) => x !== c);
       if (prev.length >= MAX_CUISINES) return prev; // cap at 3
       return [...prev, c];
+    });
+  }
+
+  function toggleAppliance(a) {
+    setAppliances((prev) => {
+      if (!prev.includes(a)) return [...prev, a];
+      if (prev.length === 1) return prev; // at least one is required
+      return prev.filter((x) => x !== a);
     });
   }
 
@@ -99,6 +119,8 @@ export default function Home({ onFindDeals }) {
       cuisines,
       restriction: restriction === "No restriction" ? null : restriction,
       pantry: collectPantry(),
+      // Sent in the fixed order above, whatever order they were tapped in.
+      appliances: APPLIANCES.filter((a) => appliances.includes(a)),
     });
   }
 
@@ -130,7 +152,7 @@ export default function Home({ onFindDeals }) {
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted">
           Tell us your budget and what's already in your kitchen. We'll show you
-          exactly what to buy this week and what you're eating — built around
+          exactly what to buy this week and what you're eating, built around
           real deals at the store nearest you.
         </p>
       </motion.header>
@@ -280,7 +302,7 @@ export default function Home({ onFindDeals }) {
             <span className="font-medium text-muted">(optional)</span>
           </label>
           <p className="mb-2 text-xs text-muted">
-            Tap what's already in your kitchen — we'll leave it out of your
+            Tap what's already in your kitchen. We'll leave it out of your
             basket so your budget goes to what you actually need.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -303,6 +325,33 @@ export default function Home({ onFindDeals }) {
             value={pantryExtra}
             onChange={(e) => setPantryExtra(e.target.value)}
           />
+        </div>
+
+        {/* 7. Kitchen appliances: meals only use what's selected */}
+        <div>
+          <label className="mb-1 block text-sm font-bold text-ink">
+            What can you cook with?
+          </label>
+          <p className="mb-2 text-xs text-muted">
+            Every meal will use only what you pick. Keep at least one selected.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {APPLIANCES.map((a) => {
+              const active = appliances.includes(a);
+              return (
+                <motion.button
+                  key={a}
+                  type="button"
+                  whileTap={press}
+                  aria-pressed={active}
+                  onClick={() => toggleAppliance(a)}
+                  className={`chip ${active ? "chip-on" : "chip-off"}`}
+                >
+                  {a}
+                </motion.button>
+              );
+            })}
+          </div>
         </div>
 
         {error && (

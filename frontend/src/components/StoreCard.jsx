@@ -4,11 +4,9 @@ import { MapPin, Tag } from "./icons.jsx";
 
 // SECTION 1 — the single best store match for the week.
 export default function StoreCard({ store, validUntil }) {
-  // Walkable/short trips are framed as a walk; far ones as transit.
-  const travel =
-    store.band === "far"
-      ? `~${store.walk_minutes} min on foot · likely transit`
-      : `~${store.walk_minutes} min walk`;
+  // The badge already shows distance and walk time, so only far stores get
+  // an extra note.
+  const travel = store.band === "far" ? "Likely a transit trip" : null;
 
   return (
     <div className="card overflow-hidden shadow-card">
@@ -42,7 +40,7 @@ export default function StoreCard({ store, validUntil }) {
           distanceKm={store.distance_km}
           walkMinutes={store.walk_minutes}
         />
-        <span className="text-sm text-muted">{travel}</span>
+        {travel && <span className="text-sm text-muted">{travel}</span>}
         <span className="ml-auto">
           <DirectionsLink store={store} />
         </span>

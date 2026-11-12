@@ -12,10 +12,11 @@ from tests.helpers import LAST_MONTH_WEEK, current_row, parsed, query, raw_row, 
 
 PC = "M5S1Z9"
 
-# Exactly what queries.get_items() selects.
+# Exactly what queries.get_items() selects. priced_per was appended by
+# migration 006; the first 13 are the original table's columns.
 API_COLUMNS = ["id", "postal_code", "merchant", "original_name", "clean_name",
                "category", "price", "price_per_kg", "price_per_unit", "weight_kg",
-               "valid_from", "valid_to", "scraped_at"]
+               "valid_from", "valid_to", "scraped_at", "priced_per"]
 
 
 def test_flyer_items_is_now_a_view_with_the_api_columns(db):

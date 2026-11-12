@@ -87,6 +87,7 @@ class _Row:
     unit_price: Decimal | None
     original_name: str
     flyer_id: int | None
+    priced_per: str | None = None  # lb | kg | 100g when the price is a per-weight rate
 
     @property
     def product_key(self) -> tuple:
@@ -152,7 +153,8 @@ def _prepare(parsed_rows: list[dict], naive_tz: ZoneInfo) -> tuple[list[_Row], C
             weight = None
         pack = r.get("pack_count") or None
 
-        if weight is not None:
+        priced_per = r.get("priced_per") if r.get("price_per_kg") else None
+        if weight is not None or priced_per:
             unit_type, unit_price = "kg", r.get("price_per_kg")
         elif pack:
             unit_type, unit_price = "pack_unit", r.get("price_per_unit")
@@ -179,6 +181,7 @@ def _prepare(parsed_rows: list[dict], naive_tz: ZoneInfo) -> tuple[list[_Row], C
                 unit_price=_dec(unit_price, _CENT),
                 original_name=r.get("original_name") or display,
                 flyer_id=r.get("flyer_id"),
+                priced_per=priced_per,
             )
         )
     return usable, counts
@@ -348,6 +351,7 @@ def _upsert_facts(cur, batch_id, facts, store_keys, product_keys) -> tuple[int, 
                 r.weight_kg,
                 r.original_name,
                 r.flyer_id,
+                r.priced_per,
                 f["source_row_count"],
                 batch_id,  # first_batch_id: only used when the row is new
                 batch_id,  # last_batch_id
@@ -362,7 +366,7 @@ def _upsert_facts(cur, batch_id, facts, store_keys, product_keys) -> tuple[int, 
             product_key, store_key, flyer_week_start, valid_from_date, valid_to_date,
             valid_from, valid_to, price, price_max, unit_price, unit_type,
             price_per_kg, price_per_unit, weight_kg, original_name, flyer_id,
-            source_row_count, first_batch_id, last_batch_id)
+            priced_per, source_row_count, first_batch_id, last_batch_id)
         VALUES %s
         ON CONFLICT ON CONSTRAINT uq_fact_grain DO UPDATE SET
             valid_from_date  = EXCLUDED.valid_from_date,
@@ -378,6 +382,7 @@ def _upsert_facts(cur, batch_id, facts, store_keys, product_keys) -> tuple[int, 
             weight_kg        = EXCLUDED.weight_kg,
             original_name    = EXCLUDED.original_name,
             flyer_id         = EXCLUDED.flyer_id,
+            priced_per       = EXCLUDED.priced_per,
             source_row_count = EXCLUDED.source_row_count,
             last_batch_id    = EXCLUDED.last_batch_id
             -- first_batch_id deliberately untouched: it records first sighting.
@@ -443,6 +448,7 @@ def load_batch(
                         "missing_size_count": sum(
                             1 for f in facts
                             if f["row"].weight_kg is None and f["row"].pack_count is None
+                            and not f["row"].priced_per  # sold by weight has a unit
                         ),
                         "invalid_window_count": counts["invalid_window"],
                         "category_counts": dict(Counter(f["row"].category for f in facts)),

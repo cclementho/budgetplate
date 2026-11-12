@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { item, press, stagger } from "../motion.js";
 import { Search } from "./icons.jsx";
 
-const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
+const money = (v) => (v == null ? "n/a" : `$${Number(v).toFixed(2)}`);
 
 // Low-key "looking for something specific?" footnote at the bottom of the
 // results page. Searches a single item and shows matches inline as a compact
@@ -24,7 +24,7 @@ export default function ItemSearch({ postal }) {
       const res = await api.searchItems(postal, query.trim());
       if (res.status === "loading") {
         setResults([]);
-        setNote("Still fetching deals — try again in a moment.");
+        setNote("Still fetching deals. Try again in a moment.");
       } else {
         setResults(res.results || []);
         if (!res.results || res.results.length === 0) {

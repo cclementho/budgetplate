@@ -1,5 +1,8 @@
 """Nearby stores endpoint."""
 
+import logging
+import time
+
 from fastapi import APIRouter, Query
 
 from activity import record_request
@@ -9,6 +12,7 @@ from queries import get_deal_counts
 from scraper.pipeline import has_fresh_data
 
 router = APIRouter()
+logger = logging.getLogger("budgetplate.stores")
 
 
 @router.get("/stores")
@@ -27,6 +31,7 @@ def stores(
     immediately. The frontend polls /api/scrape/status and refetches once ready
     — this keeps the "Find Deals" flow from blocking for 30-60s.
     """
+    started = time.perf_counter()
     postal_code = postal_code.replace(" ", "").upper()
     # Every results page starts here, so this is where demand is counted; the
     # weekly refresh only scrapes postal codes people actually request.
@@ -44,8 +49,19 @@ def stores(
             ),
         }
 
+    t0 = time.perf_counter()
     deal_counts = get_deal_counts(postal_code)
+    counts_ms = round((time.perf_counter() - t0) * 1000)
     result = find_stores(postal_code, deal_counts=deal_counts)
+    timing = result.get("timing", {})
+    # One line per request so Render logs show where the time went.
+    logger.info(
+        "stores timing: postal=%s cache=%s nominatim_ms=%s overpass_ms=%s deal_counts_ms=%d "
+        "total_ms=%d stores=%d",
+        postal_code, timing.get("cache"), timing.get("geocode_ms"), timing.get("overpass_ms"),
+        counts_ms,
+        round((time.perf_counter() - started) * 1000), len(result["stores"]),
+    )
 
     return {
         "status": "ready",

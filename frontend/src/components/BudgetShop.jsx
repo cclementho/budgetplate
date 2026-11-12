@@ -3,10 +3,23 @@ import { motion } from "framer-motion";
 import { fadeUp, item, press, stagger } from "../motion.js";
 import { Bulb, Check, Copy, Sparkles } from "./icons.jsx";
 
-const money = (v) => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
+const money = (v) => (v == null ? "n/a" : `$${Number(v).toFixed(2)}`);
 
 // Printable shopping list is grouped in this fixed order (Section 4).
-const GROUP_ORDER = ["Proteins", "Produce", "Grains & Pantry", "Other"];
+const GROUP_ORDER = [
+  "Proteins",
+  "Produce",
+  "Grains & Pantry",
+  "Dairy & Eggs",
+  "Other",
+];
+
+// "2", "1.5": how many of a listing to buy, without trailing zeros.
+const qty = (v) => (v == null ? "1" : String(Number(Number(v).toFixed(2))));
+
+// "x2" for packs, "1.5 kg" for items sold by weight.
+const amount = (it) =>
+  it.sold_by_weight ? `${qty(it.quantity)} kg` : `x${qty(it.quantity)}`;
 
 // Sections 2-4 of the results page:
 //   2. Your weekly basket (hero) — items, running total, budget verdict, swap
@@ -15,6 +28,10 @@ const GROUP_ORDER = ["Proteins", "Produce", "Grains & Pantry", "Other"];
 // Presentational only; receives the /budget-plan response as `result`.
 export default function BudgetShop({ result, budget }) {
   const [copied, setCopied] = useState(false);
+  // Shopping-list rows the shopper has ticked off (keyed by deal).
+  const [checked, setChecked] = useState({});
+  const toggleChecked = (key) =>
+    setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const plan = result?.plan;
   const basket = plan?.basket || [];
@@ -22,6 +39,9 @@ export default function BudgetShop({ result, budget }) {
   const total = result?.estimated_total ?? plan?.estimated_total;
   const underBudget = result?.under_budget;
   const swap = plan?.swap_suggestion;
+  // Lunch and dinner for a week is 14 servings per person.
+  const servingsTotal = plan?.servings_total;
+  const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
 
@@ -51,11 +71,13 @@ export default function BudgetShop({ result, budget }) {
     budget > 0 ? Math.min((Number(total) / budget) * 100, 100) : 0;
 
   function copyList() {
-    const lines = ["BudgetPlate — this week's shopping list", ""];
+    const lines = ["BudgetPlate: this week's shopping list", ""];
     grouped.forEach(({ group, items }) => {
       lines.push(group.toUpperCase());
       items.forEach((it) =>
-        lines.push(`  - ${it.name} (${it.suggested_quantity}) — ${money(it.subtotal)}`)
+        lines.push(
+          `  [ ] ${it.name} (${amount(it)}): ${money(it.subtotal)}`
+        )
       );
       lines.push("");
     });
@@ -97,7 +119,11 @@ export default function BudgetShop({ result, budget }) {
               <div className="min-w-0">
                 <p className="font-bold text-ink">{it.name}</p>
                 <p className="tnum text-sm text-muted">
-                  {it.suggested_quantity} · {money(it.price)} each
+                  {it.sold_by_weight
+                    ? `${qty(it.quantity)} kg × ${money(it.price)}/kg (${money(
+                        it.listed_price
+                      )}/${it.priced_per} on the flyer)`
+                    : `${qty(it.quantity)} × ${money(it.price)}`}
                 </p>
                 <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>
@@ -159,10 +185,10 @@ export default function BudgetShop({ result, budget }) {
           {skippedPantry.length > 0 && (
             <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
               <span className="font-semibold text-ink">
-                Skipped {skippedPantry.length}{" "}
-                {skippedPantry.length === 1 ? "deal" : "deals"}
+                Left out {skippedPantry.length}{" "}
+                {skippedPantry.length === 1 ? "item" : "items"}
               </span>{" "}
-              you already have at home: {skippedPantry.slice(0, 4).join(", ")}
+              you already have: {skippedPantry.slice(0, 4).join(", ")}
               {skippedPantry.length > 4 &&
                 ` +${skippedPantry.length - 4} more`}
             </p>
@@ -184,6 +210,14 @@ export default function BudgetShop({ result, budget }) {
           <h2 className="text-xl font-extrabold tracking-tight text-ink">
             What you can make
           </h2>
+          {servingsTotal > 0 && servingsTarget > 0 && (
+            <p className="mt-1 text-sm text-muted">
+              About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
+              servings, planned for{" "}
+              <span className="tnum">{servingsTarget}</span> (lunch and dinner
+              for 7 days).
+            </p>
+          )}
           <motion.div
             variants={stagger}
             initial="hidden"
@@ -199,7 +233,14 @@ export default function BudgetShop({ result, budget }) {
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-extrabold text-ink">{m.name}</h3>
                   <span className="tnum shrink-0 rounded-full bg-brand-tint px-2.5 py-1 text-xs font-bold text-brand-deep">
-                    {m.prep_time}
+                    {[
+                      m.servings > 0 &&
+                        `${m.servings} ${m.servings === 1 ? "serving" : "servings"}`,
+                      m.appliance,
+                      m.prep_time,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -209,6 +250,14 @@ export default function BudgetShop({ result, budget }) {
                       className="rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-semibold text-brand-deep"
                     >
                       {u}
+                    </span>
+                  ))}
+                  {(m.from_home || []).map((u, j) => (
+                    <span
+                      key={`home-${j}`}
+                      className="rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-semibold text-muted"
+                    >
+                      {u} · at home
                     </span>
                   ))}
                 </div>
@@ -246,28 +295,45 @@ export default function BudgetShop({ result, budget }) {
           </motion.button>
         </div>
 
-        <div className="mt-4 space-y-5 rounded-3xl border border-line bg-surface p-5 shadow-soft">
+        <p className="mt-1 text-sm text-muted">
+          Tick items off as you shop.
+        </p>
+
+        <div className="mt-4 space-y-4 rounded-3xl border border-line bg-surface p-5 shadow-soft">
           {grouped.map(({ group, items }) => (
             <div key={group}>
               <h3 className="eyebrow">{group}</h3>
-              <div className="mt-1.5 divide-y divide-line">
-                {items.map((it, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
-                    <span className="text-ink">
-                      {it.name}{" "}
-                      <span className="text-muted">
-                        · {it.suggested_quantity}
-                      </span>
-                    </span>
-                    <span className="tnum font-bold text-ink">
-                      {money(it.subtotal)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <ul className="mt-1">
+                {items.map((it, i) => {
+                  const key = it.deal_id ?? `${group}-${i}`;
+                  const done = !!checked[key];
+                  return (
+                    <li key={key}>
+                      <label className="flex cursor-pointer items-center gap-2.5 py-1 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={done}
+                          onChange={() => toggleChecked(key)}
+                          className="h-4 w-4 shrink-0 rounded border-line accent-brand"
+                        />
+                        <span
+                          className={`min-w-0 flex-1 truncate ${
+                            done ? "text-muted line-through" : "text-ink"
+                          }`}
+                        >
+                          {it.name}
+                        </span>
+                        <span className="tnum shrink-0 text-muted">
+                          {amount(it)}
+                        </span>
+                        <span className="tnum w-16 shrink-0 text-right text-ink">
+                          {money(it.subtotal)}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ))}
           <div className="flex items-center justify-between border-t-2 border-line pt-3.5">

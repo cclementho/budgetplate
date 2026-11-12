@@ -118,7 +118,7 @@ def test_every_table_in_public_has_rls_enabled_but_not_forced(db):
         SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind = 'r'""")
-    assert len(tables) == 9
+    assert len(tables) == 10
     # A future migration that adds a table without RLS fails here.
     assert [t["relname"] for t in tables if not t["relrowsecurity"]] == []
     # FORCE would subject the owner (the backend) to RLS too.
