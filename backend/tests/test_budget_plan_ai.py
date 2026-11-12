@@ -351,3 +351,25 @@ def test_every_basket_item_gets_a_size_when_the_flyer_has_one():
     assert "size" in plan["basket"][0]
     prompt = build_budget_prompt(PROFILE, DEALS)
     assert "SENSIBLE PACK SIZES" in prompt and "smallest pack that covers the servings" in prompt
+
+
+def test_groups_come_from_python_not_the_model():
+    from ai.budget import group_for
+
+    def group(name, category="Other"):
+        return group_for({"clean_name": name, "category": category})
+
+    assert group("White Whole Mushrooms 227 G") == "Produce"            # parser says Other
+    assert group("Handi Ginger & Garlic Paste", "Produce") == "Grains & Pantry"
+    assert group("Three Crabs Fish Sauce", "Meat & Seafood") == "Grains & Pantry"
+    assert group("Fresh Pork Shoulder", "Meat & Seafood") == "Proteins"
+    assert group("Bok Choy", "Produce") == "Produce"
+    assert group("Tilda Basmati Rice", "Grains & Bread") == "Grains & Pantry"
+    assert group("Large White Eggs", "Dairy & Eggs") == "Dairy & Eggs"
+    assert group("Sunrise Tofu") == "Proteins"                          # Other: keyword fallback
+    assert group("Frozen Perogies", "Frozen") == "Other"
+
+    # The model isn't asked for a group, and one it sends anyway is ignored.
+    assert '"group"' not in build_budget_prompt(PROFILE, DEALS)
+    plan = finalize_plan({"basket": [{"id": 2, "quantity": 1, "group": "Proteins"}]}, DEALS, PROFILE)
+    assert plan["basket"][0]["group"] == "Produce"

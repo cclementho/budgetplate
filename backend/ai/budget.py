@@ -14,7 +14,7 @@ get the arithmetic wrong.
 import logging
 import re
 
-from ai.candidates import bucket_for
+from ai.candidates import _words, bucket_for
 from ai.client import call_claude_json
 from config import settings
 
@@ -28,6 +28,40 @@ _BUCKET_GROUP = {
     "grains_pantry": "Grains & Pantry",
     "dairy_eggs": "Dairy & Eggs",
 }
+_CATEGORY_GROUP = {
+    "Meat & Seafood": "Proteins",
+    "Produce": "Produce",
+    "Grains & Bread": "Grains & Pantry",
+    "Dairy & Eggs": "Dairy & Eggs",
+}
+# A jar, tin or packet made from an ingredient is a pantry item whatever the
+# ingredient is: ginger-garlic paste is not produce and fish sauce is not fish.
+_PANTRY_FORM = _words(
+    "paste", "sauce", "powder", "starch", "seasoning", "spice", "masala", "bouillon", "broth",
+    "stock", "soup", "vinegar", "oil", "dressing", "mayonnaise", "ketchup", "mustard", "salsa",
+    "canned", "pickle", "pickled", "marinated", "dried", "mix", "kit",
+)
+# Fresh produce the parser doesn't recognise and files under "Other".
+_FRESH_PRODUCE = _words("mushroom")
+
+
+def group_for(deal: dict) -> str:
+    """The shopping-list group for a deal, decided in Python (never by the model).
+
+    The parser's category is the starting point, with two corrections: jars
+    and packets go to Grains & Pantry, and fresh produce the parser misses
+    (mushrooms) goes to Produce. Deals the parser left in "Other" fall back to
+    the shortlist's keyword buckets.
+    """
+    name = deal.get("clean_name") or ""
+    if _PANTRY_FORM.search(name):
+        return "Grains & Pantry"
+    if _FRESH_PRODUCE.search(name):
+        return "Produce"
+    category = deal.get("category")
+    if category in _CATEGORY_GROUP:
+        return _CATEGORY_GROUP[category]
+    return _BUCKET_GROUP.get(bucket_for(deal), "Other")
 
 # Kitchen appliances a shopper can say they have (the frontend offers exactly
 # these). Most kitchens have the first two, so they are the default.
@@ -319,7 +353,6 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
         if deal_id in lines:  # the same deal listed twice: one line, summed
             lines[deal_id]["quantity"] += quantity
             continue
-        bucket = bucket_for(deal)
         lines[deal_id] = {
             "deal_id": deal_id,
             "name": str(entry.get("name") or deal.get("clean_name") or "").strip(),
@@ -328,7 +361,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             "quantity": quantity,
             "size": pack_size(deal),  # what one unit is; None if the flyer doesn't say
             "why": str(entry.get("why") or "").strip(),
-            "group": _BUCKET_GROUP.get(bucket, "Other"),
+            "group": group_for(deal),
             # For by-weight items "price" is per kg and "quantity" is kg;
             # "listed_price" is what the flyer shows (e.g. 2.00 per lb).
             "sold_by_weight": by_weight,

@@ -44,7 +44,7 @@ _NON_FOOD = _words(
     "bouquet", "flower", "plant", "rose", "tropical", r"\d+\"\s*pot", "cling wrap", "foil", "parchment", "napkin", "paper towel",
     "tissue", "garbage bag", "trash bag", "freezer bag", "sandwich bag", "cutlery",
     "candle", "batter(?:y|ie)", "light bulb", "pet", "dog food", "cat food", "dog treat",
-    "cat treat", "kitten", "puppy", "milk-?bone",
+    "cat treat", "kitten", "puppy", "milk-?bone", "stainless steel", "sauce ?pan", "hatching",
     "litter", "vitamin", "supplement", "advil", "tylenol", "reactine", "claritin", "allegra",
     "benadryl", "razor", "shampoo", "conditioner", "lotion", "deodorant", "toothpaste",
     "toothbrush", "diaper", "wipe", "soap", "detergent", "cleaner", "bleach", "toy", "plush",
@@ -57,7 +57,7 @@ _SNACK_OR_DRINK = _words(
     "cupcake", "pie", "donut", "doughnut", "dessert", "macaroon", "swiss roll", "pudding",
     "jell-?o", "jelly powder", "ice cream", "popsicle", "novelt(?:y|ie)", "granola bar",
     "protein bar", "chocolate bar", "candy bar", "nature valley",
-    "turtle", "brandy bean", "bubly", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
+    "turtle", "brandy bean", "bubly", "ginger ale", "nutella", "marshmallow", "gum", "fudge", "pop", "soda", "cola", "soft drink",
     "garden cocktail", "juice cocktail", "cranberry cocktail", "cocktail mix", "clamato", "juice", "nectar", "lassi", "energy drink", "drink", "beverage", "iced tea",
     "coffee", "espresso", "k-cup", "tea", "water", "kombucha", "beer", "wine", "cider",
 )
