@@ -113,6 +113,8 @@ export default function Results({ profile, onBack }) {
                 ...partial,
                 plan: { ...partial.plan, basket: [...partial.plan.basket, item] },
               }),
+            // A meal didn't pass the checks; a corrected plan is on its way.
+            onRetry: () => partial && show({ ...partial, retrying: true }),
             onMeal: (meal) =>
               partial &&
               show({

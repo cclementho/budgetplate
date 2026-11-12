@@ -98,11 +98,14 @@ def _extract_json(text: str):
     raise ValueError("Could not parse JSON from model response")
 
 
-def _request(prompt: str, system: str | None, max_tokens: int, model: str | None) -> dict:
+def _request(prompt: str, system: str | None, max_tokens: int, model: str | None,
+             follow_up: list[dict] | None = None) -> dict:
     kwargs = {
         "model": model or settings.CLAUDE_MODEL,
         "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
+        # follow_up continues the conversation: the model's earlier reply and
+        # the note asking it to correct it.
+        "messages": [{"role": "user", "content": prompt}, *(follow_up or [])],
     }
     if system:
         kwargs["system"] = system
@@ -155,14 +158,17 @@ def call_claude_json(
     system: str | None = None,
     max_tokens: int = 4096,
     model: str | None = None,
+    follow_up: list[dict] | None = None,
 ):
     """Call Claude Haiku and return parsed JSON from the response text.
 
     ``model`` overrides ``settings.CLAUDE_MODEL`` for one call (used by the
     model-comparison script); production callers leave it unset.
+    ``follow_up`` is extra turns after the prompt (an earlier reply and a
+    correction request).
     """
     client = get_client()
-    kwargs = _request(prompt, system, max_tokens, model)
+    kwargs = _request(prompt, system, max_tokens, model, follow_up)
 
     _last_call.stats = {}
     started = time.perf_counter()

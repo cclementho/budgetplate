@@ -52,6 +52,9 @@ from ai.candidates import (  # noqa: E402
     _is_bulk_pack, bucket_for, expand_listings, select_candidates, split_listing,
 )
 from ai.client import _extract_json  # noqa: E402
+from ai.plan_checks import (  # noqa: E402
+    ingredient_text, missing_named_ingredients, not_at_home, unknown_uses,
+)
 from config import settings  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "budget_eval")
@@ -472,60 +475,6 @@ def schema_ok(plan) -> bool:
     return all(isinstance(m, dict) and isinstance(m.get("uses"), list) for m in meals)
 
 
-# Meal-name words that promise an ingredient, and what counts as having it.
-# A name is only checked for the words listed here, so an unusual dish is
-# never flagged just because the checker doesn't know it.
-_LEAFY = (r"greens?|bok choy|spinach|kale|lettuce|cabbage|gai lan|rapini|chard|saag|methi|arugula|"
-          r"romaine|collards?|napa|coleslaw|salad|watercress|yu choy|broccoli")
-NAME_INGREDIENTS = [
-    ("greens", r"\bgreens\b", _LEAFY),
-    ("egg", r"\beggs?\b(?! ?(?:noodles?|plants?|rolls?))|\bomelett?e\b|\bfrittata\b|\bscrambled?\b", r"\beggs?\b"),
-    ("chicken", r"\bchicken\b", r"chicken|drumstick|thigh|wings?\b"),
-    ("pork", r"\bpork\b", r"pork|picnic|\bham\b|bacon|side ribs|longanisa"),
-    ("beef", r"\bbeef\b", r"beef|steak|brisket|\bchuck\b|sirloin|oxtail|\bround\b|rib roast|short rib"),
-    ("turkey", r"\bturkey\b", r"turkey"),
-    ("tofu", r"\btofu\b", r"tofu|bean curd"),
-    ("fish", r"\bfish\b|\bsalmon\b|\btilapia\b|\btuna\b|\bbasa\b|\bcod\b",
-     r"fish|salmon|tilapia|tuna|basa|\bcod\b|haddock|trout|sardine|mackerel|herring|pollock|sole"),
-    ("shrimp", r"\bshrimps?\b|\bprawns?\b", r"shrimp|prawn"),
-    ("sausage", r"\bsausages?\b", r"sausage|wiener|longanisa|chorizo|kolbassa|hot dog|frank"),
-    ("bacon", r"\bbacon\b", r"bacon"),
-    ("mushroom", r"\bmushrooms?\b", r"mushroom"),
-    ("potato", r"\bpotato(?:es)?\b|\bhash ?browns?\b", r"potato|hash ?brown|fries"),
-    ("tomato", r"\btomato(?:es)?\b", r"tomato|passata|salsa|marinara|pasta sauce"),
-    ("carrot", r"\bcarrots?\b", r"carrot"),
-    ("onion", r"\bonions?\b", r"onion|scallion|shallot|leek"),
-    ("cabbage", r"\bcabbage\b", r"cabbage|coleslaw|napa"),
-    ("spinach", r"\bspinach\b", r"spinach|saag|palak"),
-    ("broccoli", r"\bbroccoli\b", r"broccoli"),
-    ("cauliflower", r"\bcauliflower\b", r"cauliflower"),
-    ("eggplant", r"\beggplants?\b", r"eggplant|aubergine"),
-    ("zucchini", r"\bzucchini\b", r"zucchini"),
-    ("cucumber", r"\bcucumbers?\b", r"cucumber"),
-    ("corn", r"\bcorn\b(?! ?starch)", r"\bcorn\b"),
-    ("bell pepper", r"\bbell peppers?\b|\bpeppers\b", r"pepper"),
-    ("rice", r"(?<!cauliflower )\brice\b(?! ?(?:noodles?|vinegar|paper))|\bcongee\b", r"\brice\b"),
-    ("noodles", r"\bnoodles?\b|\bramen\b|\bchow mein\b|\blo mein\b",
-     r"noodle|ramen|udon|chow mein|spaghetti|pasta|vermicelli|bihon|linguine"),
-    ("pasta", r"\bpasta\b|\bspaghetti\b|\bpenne\b|\bmacaroni\b|\blasagna\b",
-     r"pasta|spaghetti|penne|macaroni|lasagna|noodle|rotini|fusilli|linguine|fettuccine|gnocchi"),
-    ("beans", r"\bbeans?\b(?! ?sprouts?)", r"\bbeans?\b|chickpea|lentil"),
-    ("lentils", r"\blentils?\b|\bdal\b|\bdaal\b", r"lentil|\bdal\b|daal"),
-    ("chickpeas", r"\bchickpeas?\b|\bchana\b", r"chickpea|chana|garbanzo"),
-    ("cheese", r"\bcheese\b|\bcheesy\b|\bcheddar\b|\bmozzarella\b|\bpaneer\b",
-     r"cheese|cheddar|mozzarella|paneer|feta|parmesan|havarti|gouda|brie|swiss|singles|cheez|velveeta"),
-    ("yogurt", r"\byog(?:h)?o?urt\b|\braita\b", r"yog(?:h)?o?urt|dahi|skyr|kefir"),
-    ("toast", r"\btoast\b|\bsandwich(?:es)?\b", r"bread|toast|\bbuns?\b|bagel|baguette|naan|pita|sourdough|muffin|loaf|roll|tortilla|wrap"),
-    ("oats", r"\boats?\b|\boatmeal\b|\bporridge\b", r"\boats?\b|oatmeal|porridge"),
-    ("banana", r"\bbananas?\b", r"banana"),
-    ("apple", r"\bapples?\b", r"apple"),
-    ("curry", r"\bcurr(?:y|ied|ies)\b",
-     r"curry|masala|garam|turmeric|cumin|coriander|korma|tikka|vindaloo|madras|jerk|spice"),
-    ("peanut butter", r"\bpeanut butter\b", r"peanut butter"),
-    ("milk", r"\bmilk\b(?! ?bread)", r"\bmilk\b"),
-]
-NAME_INGREDIENTS = [(label, re.compile(said, re.I), re.compile(has, re.I)) for label, said, has in NAME_INGREDIENTS]
-
 _COOKED_ONION = re.compile(
     r"saut[eé]|fr(?:y|ied|ying)|cook|caramel|soften|brown|simmer|bake|roast|scrambl|omelet|grill", re.I)
 
@@ -598,34 +547,22 @@ def check(case: dict, store_deals: list[dict], plan: dict) -> tuple[list[dict], 
             v("one_deal_as_multiple_products", f"{label}: one unit of {it.get('deal_name')!r}")
 
     # Recipe ingredients come from the list (or from home, which the app's own rule 5 allows).
+    # Same checks production's validate_plan repairs (ai.plan_checks).
     for meal in plan.get("meals") or []:
-        for use in (meal.get("uses") or []) + (meal.get("from_home") or []):
-            u = norm(use)
-            in_basket = any(u and (u == b or u in b or b in u) for b in basket_names if b)
-            if in_basket:
-                continue
-            if re.fullmatch(r"\s*(salt|pepper|water|salt and pepper)\s*", use, re.I):
-                continue  # the prompt always allows these
-            if pantry_re and pantry_re.search(use):
-                r("meal_uses_pantry_item", f"{meal.get('name')!r} uses {use!r} from home (allowed by the prompt's rule 5)")
-                continue
+        for use in unknown_uses(meal, basket) + not_at_home(meal, pantry):
             v("meal_ingredient_not_in_basket", f"{meal.get('name')!r} uses {use!r}, which is not on the shopping list")
+        for use in meal.get("from_home") or []:
+            if use not in not_at_home(meal, pantry) and pantry_re and pantry_re.search(use):
+                r("meal_uses_pantry_item", f"{meal.get('name')!r} uses {use!r} from home (allowed by the prompt)")
 
     # The meal's name promises ingredients the meal doesn't have, and breakfast
     # shouldn't be built on potatoes or raw onion.
-    by_name = {norm(it.get("name", "")): it for it in basket}
     for meal in plan.get("meals") or []:
-        having = []
-        for use in meal.get("uses") or []:
-            line = by_name.get(norm(use), {})
-            having += [use, line.get("deal_name") or ""]
-        having += meal.get("from_home") or []
-        has_text = " | ".join(having)
+        has_text = ingredient_text(meal, basket)
         meal_name = meal.get("name", "")
-        for label, said, has in NAME_INGREDIENTS:
-            if said.search(meal_name) and not has.search(has_text):
-                v("meal_name_ingredient_missing",
-                  f"{meal_name!r} names {label} but uses {(meal.get('uses') or []) + (meal.get('from_home') or [])}")
+        for label in missing_named_ingredients(meal, basket):
+            v("meal_name_ingredient_missing",
+              f"{meal_name!r} names {label} but uses {(meal.get('uses') or []) + (meal.get('from_home') or [])}")
         if meal.get("meal") == "breakfast":
             if re.search(r"potato|hash ?brown", has_text, re.I):
                 v("breakfast_potato_or_raw_onion", f"breakfast {meal_name!r} contains potatoes: {meal.get('uses')}")

@@ -16,7 +16,8 @@ import logging
 import re
 
 from ai.candidates import _words, bucket_for
-from ai.client import call_claude_json, stream_claude_json
+from ai.client import ClaudeResponseError, call_claude_json, last_call_stats, stream_claude_json
+from ai.plan_checks import validate_plan
 from config import settings
 
 logger = logging.getLogger("budgetplate.budget")
@@ -421,16 +422,110 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
     }
 
 
-def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None) -> dict:
-    """Ask Claude for the week's plan and return it priced from the flyer.
+# How often a plan needed a second call, since this process started.
+_plans_made = 0
+_plans_retried = 0
+
+
+def _retry_note(problems: list[dict]) -> str:
+    lines = "\n".join(f"- {p['detail']}" for p in problems)
+    return (
+        "That plan has problems. Fix ONLY these and return the complete corrected plan as JSON in the "
+        "same schema, with nothing else:\n"
+        f"{lines}\n"
+        "For each one, either add the missing ingredient to the basket (by its ID from the deal list) "
+        "and to the meal's \"uses\", or rename or replace the meal so its name matches what it is "
+        "made of. Keep the basket within the budget."
+    )
+
+
+def _add_stats(total: dict, stats: dict) -> None:
+    """Fold one call's stats into the running totals for the request."""
+    total["model"] = stats.get("model") or total.get("model")
+    total["calls"] = total.get("calls", 0) + 1
+    for key in ("input_tokens", "output_tokens", "claude_ms"):
+        if stats.get(key) is not None:
+            total[key] = (total.get(key) or 0) + stats[key]
+    if stats.get("first_text_ms") is not None:
+        total.setdefault("first_text_ms", stats["first_text_ms"])
+
+
+def _checked(raw, deals: list[dict], profile: dict) -> tuple[dict, dict]:
+    return validate_plan(finalize_plan(raw, deals, profile), profile)
+
+
+def _finish(first: tuple[dict, dict], second: tuple[dict, dict] | None, stats: dict) -> dict:
+    """Pick the plan to return and record what happened in ``stats``.
+
+    The corrected plan wins unless it has more problems than the first.
+    """
+    global _plans_made, _plans_retried
+    _plans_made += 1
+    plan, report = first
+    if second is not None:
+        _plans_retried += 1
+        if len(second[1]["problems"]) <= len(report["problems"]):
+            plan, report = second
+    stats.update(
+        retried=second is not None,
+        problems_first=len(first[1]["problems"]),
+        problems=len(report["problems"]),
+        fixes=len(report["fixes"]),
+    )
+    if report["fixes"] or report["problems"] or second is not None:
+        logger.info(
+            "budget plan validation: retried=%s fixes=%s problems_first=%s problems_left=%s "
+            "(retries so far: %d of %d plans)",
+            second is not None, report["fixes"], [p["detail"] for p in first[1]["problems"]],
+            [p["detail"] for p in report["problems"]], _plans_retried, _plans_made,
+        )
+    return plan
+
+
+def _second_attempt(prompt: str, raw, problems: list[dict], deals, profile, model, stats) -> tuple[dict, dict] | None:
+    """Ask once for a corrected plan. None if that call can't be used."""
+    follow_up = [
+        {"role": "assistant", "content": json.dumps(raw)},
+        {"role": "user", "content": _retry_note(problems)},
+    ]
+    try:
+        raw2 = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model,
+                                follow_up=follow_up)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        logger.warning("budget plan retry failed (%s); keeping the first plan", exc.reason)
+        return None
+    _add_stats(stats, last_call_stats())
+    return _checked(raw2, deals, profile)
+
+
+def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None,
+                         stats: dict | None = None) -> dict:
+    """Ask Claude for the week's plan and return it priced, checked and repaired.
 
     ``deals`` is the shortlist the model may choose from. ``model`` overrides
     the configured Claude model (``settings.CLAUDE_MODEL``) for this call only;
     leave it unset in production.
+
+    The reply is priced from the flyer (``finalize_plan``) and then checked
+    (``ai.plan_checks.validate_plan``). If a meal still has a problem Python
+    can't repair, Claude is asked once for a corrected plan and the better of
+    the two is returned. ``stats``, if given, is filled with the tokens and
+    time of all calls plus ``retried``, ``problems`` and ``fixes``.
     """
+    stats = stats if stats is not None else {}
     prompt = build_budget_prompt(profile, deals)
-    raw = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)
-    return finalize_plan(raw, deals, profile)
+    try:
+        raw = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        raise
+    _add_stats(stats, last_call_stats())
+    first = _checked(raw, deals, profile)
+    second = None
+    if first[1]["problems"]:
+        second = _second_attempt(prompt, raw, first[1]["problems"], deals, profile, model, stats)
+    return _finish(first, second, stats)
 
 
 class _ObjectScanner:
@@ -491,8 +586,10 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
     Yields ``("item", basket line)`` and ``("meal", meal)`` as each one is
     finished, already priced and cleaned by ``finalize_plan``, and finally
     ``("plan", (plan, stats))``: the fully validated plan, which is the source
-    of truth and replaces everything shown so far. Raises
-    ``ClaudeResponseError`` if the finished reply can't be used.
+    of truth and replaces everything shown so far. If the plan needs a
+    correction call, ``("retry", {"problems": [...]})`` is yielded first; that
+    second call is not streamed. Raises ``ClaudeResponseError`` if the first
+    reply can't be used.
     """
     prompt = build_budget_prompt(profile, deals)
     scanner = _ObjectScanner()
@@ -500,8 +597,15 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
     sent_ids: set[int] = set()
     for kind, payload in stream_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model):
         if kind == "done":
-            raw, stats = payload
-            yield "plan", (finalize_plan(raw, deals, profile), stats)
+            raw, call_stats = payload
+            stats: dict = {}
+            _add_stats(stats, call_stats)
+            first = _checked(raw, deals, profile)
+            second = None
+            if first[1]["problems"]:
+                yield "retry", {"problems": [p["detail"] for p in first[1]["problems"]]}
+                second = _second_attempt(prompt, raw, first[1]["problems"], deals, profile, model, stats)
+            yield "plan", (_finish(first, second, stats), stats)
             return
         for obj in scanner.feed(payload):
             if "uses" in obj or "servings" in obj:

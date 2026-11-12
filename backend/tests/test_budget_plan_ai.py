@@ -196,8 +196,9 @@ def test_route_returns_the_python_priced_plan(claude, monkeypatch):
     body = TestClient(main.app).post("/api/budget-plan", json={
         "postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 120, "people": 1}).json()
 
-    assert body["estimated_total"] == 132.0 and body["under_budget"] is False
-    assert body["plan"]["basket"][0]["subtotal"] == 132.0
+    # 15 x $8.80 = $132 is over the $120 budget, so Python buys fewer: 13 x $8.80.
+    assert body["estimated_total"] == 114.4 and body["under_budget"] is True
+    assert body["plan"]["basket"][0]["subtotal"] == 114.4 and body["plan"]["basket"][0]["quantity"] == 13
     assert body["plan"]["servings_total"] == 14
 
 

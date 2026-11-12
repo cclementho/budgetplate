@@ -22,7 +22,7 @@ async function request(path, options = {}) {
 }
 
 // POST /api/budget-plan/stream and read its server-sent events.
-// handlers: { onStart(info), onItem(basketLine), onMeal(meal) }. Resolves with
+// handlers: { onStart(info), onItem(basketLine), onMeal(meal), onRetry() }. Resolves with
 // the validated final response (the same shape as /api/budget-plan), which
 // replaces whatever the item and meal events showed.
 async function streamBudgetPlan(profile, handlers = {}, signal) {
@@ -63,6 +63,7 @@ async function streamBudgetPlan(profile, handlers = {}, signal) {
     if (event === "start") handlers.onStart?.(payload);
     else if (event === "item") handlers.onItem?.(payload);
     else if (event === "meal") handlers.onMeal?.(payload);
+    else if (event === "retry") handlers.onRetry?.(payload);
     else if (event === "done") final = payload;
     else if (event === "error") throw new Error(payload.detail);
   };

@@ -185,7 +185,9 @@ export default function BudgetShop({ result, budget }) {
           >
             {streaming ? (
               <span className="font-medium text-muted" aria-live="polite">
-                Still building your basket…
+                {result?.retrying
+                  ? "Double-checking a couple of meals…"
+                  : "Still building your basket…"}
               </span>
             ) : underBudget ? (
               <>
