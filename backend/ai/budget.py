@@ -85,7 +85,7 @@ SYSTEM_PROMPT = (
 PROMPT_TEMPLATE = """Plan ONE week of {meals_phrase} for this shopper, and the grocery basket that makes them.
 
 SHOPPER
-- Weekly budget: ${budget:.2f} (never go over it; spending up to it is fine)
+- Weekly budget: ${budget:.2f} (never go over it)
 - People to feed: {people}
 - Cuisine preferences: {cuisines}
 - Dietary restriction: {restriction}
@@ -98,8 +98,7 @@ THE GOAL
 - Give {meal_count}. Each meal has "servings": how many portions it makes with what you bought for it.
   The servings of all meals must add up to roughly {servings_target}. Cooking a big batch and eating it again for
   lunch is expected, so one meal can count for 2 to 4 servings per person.
-{breakfast_goal}- Use the budget to make the week better and more filling: enough protein, vegetables and a carb in every meal,
-  and some variety. A basket that only feeds the shopper for two days is a failure, even if it is cheap.
+{breakfast_goal}- Make the week filling: enough protein, vegetables and a carb in every meal, and some variety. A basket that only feeds the shopper for two days is a failure, even if it is cheap.
 - Buy quantities that really make the servings. One bell pepper cannot stretch across two dishes for a week;
   if a meal makes 4 servings, buy enough protein and vegetables for 4 portions.
 

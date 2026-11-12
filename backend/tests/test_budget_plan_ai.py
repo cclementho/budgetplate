@@ -105,7 +105,8 @@ def test_prompt_without_breakfast_plans_lunches_and_dinners_only():
     assert "14 servings per person, so about 28 servings in total" in prompt
     assert "5 to 7 different meals" in prompt
     assert "breakfast" not in prompt.lower()
-    assert "spending up to it is fine" in prompt
+    assert "(never go over it)" in prompt
+    assert "spending up to it" not in prompt and "Use the budget" not in prompt   # no push to spend
     assert "Underspending is a WIN" not in prompt           # the old rule that starved baskets
     assert "NO FILLER" in prompt                            # still never pad
     assert '"why"' not in prompt                            # the model no longer explains each item

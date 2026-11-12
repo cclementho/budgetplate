@@ -190,7 +190,8 @@ export default function BudgetShop({ result, budget }) {
             ) : underBudget ? (
               <>
                 <Check size={17} />
-                You came in under budget by {money(budget - total)} this week.
+                This week costs {money(total)}. That leaves{" "}
+                {money(budget - total)} of your budget free.
               </>
             ) : (
               <>Over budget by {money(total - budget)}</>
