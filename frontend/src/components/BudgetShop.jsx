@@ -41,19 +41,26 @@ export default function BudgetShop({ result, budget }) {
   const plan = result?.plan;
   const basket = plan?.basket || [];
   const meals = plan?.meals || [];
-  const total = result?.estimated_total ?? plan?.estimated_total;
-  const underBudget = result?.under_budget;
+  // While the plan is still being written, items and meals arrive one by one
+  // and the totals are added up here; the finished plan then replaces them.
+  const streaming = result?.streaming === true;
+  const total = streaming
+    ? basket.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0)
+    : result?.estimated_total ?? plan?.estimated_total;
+  const underBudget = streaming ? total <= budget : result?.under_budget;
   const swap = plan?.swap_suggestion;
   // 14 servings per person a week (lunch, dinner), 21 with breakfast.
   const withBreakfast = plan?.include_breakfast === true;
-  const servingsTotal = plan?.servings_total;
+  const servingsTotal = streaming
+    ? meals.reduce((sum, m) => sum + (m.servings || 0), 0)
+    : plan?.servings_total;
   const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
   const skippedPantry = result?.skipped_pantry_items || [];
   // Set when few of this week's deals fit the shopper's cuisines.
   const cuisineNote = result?.cuisine_note;
 
-  if (!plan || basket.length === 0) {
+  if (!plan || (basket.length === 0 && !streaming)) {
     return (
       <p className="rounded-2xl border border-line bg-white p-6 text-center text-muted">
         {result?.message || "No weekly basket could be built for this store."}
@@ -102,14 +109,18 @@ export default function BudgetShop({ result, budget }) {
           </h2>
         </div>
         <p className="mt-1 pl-10 text-sm text-muted">
-          Built from this week's deals, matched to what you cook.
+          {streaming
+            ? "Picking from this week's deals…"
+            : "Built from this week's deals, matched to what you cook."}
         </p>
 
         <motion.div
           variants={stagger}
           initial="hidden"
           animate="show"
-          className="mt-4 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface shadow-soft"
+          className={`mt-4 divide-y divide-line overflow-hidden rounded-3xl border-line bg-surface shadow-soft ${
+            basket.length > 0 ? "border" : ""
+          }`}
         >
           {basket.map((it, i) => (
             <motion.div
@@ -142,7 +153,9 @@ export default function BudgetShop({ result, budget }) {
         {/* Budget meter + total */}
         <div className="mt-4 rounded-3xl border border-line bg-surface p-5 shadow-soft">
           <div className="flex items-end justify-between">
-            <span className="text-sm font-bold text-ink">Total this week</span>
+            <span className="text-sm font-bold text-ink">
+              {streaming ? "Total so far" : "Total this week"}
+            </span>
             <span
               className={`tnum text-3xl font-extrabold leading-none ${
                 underBudget ? "text-brand-deep" : "text-red-600"
@@ -171,7 +184,11 @@ export default function BudgetShop({ result, budget }) {
               underBudget ? "text-brand-deep" : "text-red-600"
             }`}
           >
-            {underBudget ? (
+            {streaming ? (
+              <span className="font-medium text-muted" aria-live="polite">
+                Still building your basket…
+              </span>
+            ) : underBudget ? (
               <>
                 <Check size={17} />
                 You came in under budget by {money(budget - total)} this week.
@@ -205,7 +222,7 @@ export default function BudgetShop({ result, budget }) {
       </motion.section>
 
       {/* SECTION 3 — WHAT YOU CAN MAKE */}
-      {meals.length > 0 && (
+      {(meals.length > 0 || streaming) && (
         <motion.section variants={fadeUp} initial="hidden" animate="show">
           <h2 className="text-xl font-extrabold tracking-tight text-ink">
             What you can make
@@ -215,6 +232,11 @@ export default function BudgetShop({ result, budget }) {
               <Bulb size={18} className="mt-0.5 shrink-0" />
               <span>{cuisineNote}</span>
             </div>
+          )}
+          {streaming && meals.length === 0 && (
+            <p className="mt-1 text-sm text-muted">
+              Meals will appear here once the basket is picked.
+            </p>
           )}
           {servingsTotal > 0 && servingsTarget > 0 && (
             <p className="mt-1 text-sm text-muted">

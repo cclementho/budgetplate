@@ -11,11 +11,12 @@ data - prices, subtotals and the total - so the model can't invent a price or
 get the arithmetic wrong.
 """
 
+import json
 import logging
 import re
 
 from ai.candidates import _words, bucket_for
-from ai.client import call_claude_json
+from ai.client import call_claude_json, stream_claude_json
 from config import settings
 
 logger = logging.getLogger("budgetplate.budget")
@@ -315,6 +316,7 @@ def _cap_words(text, limit: int) -> str:
     return " ".join(words).rstrip(",;:")
 
 
+_VOLUME_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(ml|l)\b", re.IGNORECASE)
 _COUNT_RE = re.compile(r"\b(\d+)\s*(?:pk|pack|ct|count|'s)\b", re.IGNORECASE)
 
 
@@ -326,21 +328,29 @@ def pack_size(deal: dict) -> str | None:
     """
     if _sold_by_weight(deal):
         return None
+    name = deal.get("clean_name") or ""
+    # Liquids are stored by weight too (2 L of milk as 2 kg); show the volume.
+    volume = _VOLUME_RE.search(name)
+    if volume:
+        return f"{volume.group(1)} {'L' if volume.group(2).lower() == 'l' else 'mL'}"
     weight = _number(deal.get("weight_kg"))
     if weight and weight > 0:
         if weight < 1:
             return f"{round(weight * 1000):g} g"
         return f"{round(weight, 2):g} kg"
-    count = _COUNT_RE.search(deal.get("clean_name") or "")
+    count = _COUNT_RE.search(name)
     return f"{int(count.group(1))} pack" if count and int(count.group(1)) > 1 else None
 
 
-def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
+def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) -> dict:
     """Turn the model's choices into the plan the API returns.
 
     Prices come from the flyer (never from the model), and every subtotal and
     the total are computed here. Basket lines whose ID isn't in the deal list
     are dropped, since they can't be priced or bought.
+
+    ``quiet`` skips the cleanup warnings; it is used for the partial plans
+    built while a reply is still streaming.
 
     Returns ``{"basket", "meals", "estimated_total", "servings_total",
     "servings_target", "include_breakfast", "swap_suggestion"}``.
@@ -422,13 +432,13 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
         })
 
     unused = [line["name"] for line in basket if line["deal_id"] not in used_ids]
-    if invalid or unused:
+    if (invalid or unused) and not quiet:
         logger.warning(
             "budget plan cleanup: dropped %d basket line(s) with no valid deal ID; "
             "%d bought item(s) not used by any meal: %s", invalid, len(unused), unused,
         )
 
-    if off_list:
+    if off_list and not quiet:
         logger.warning("budget plan: meals naming an appliance the shopper doesn't have: %s", off_list)
 
     swap = raw.get("swap_suggestion")
@@ -453,3 +463,81 @@ def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = N
     prompt = build_budget_prompt(profile, deals)
     raw = call_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model)
     return finalize_plan(raw, deals, profile)
+
+
+class _ObjectScanner:
+    """Finds finished basket and meal objects in a JSON reply as it streams in.
+
+    The reply is ``{"basket": [{...}, ...], ..., "meals": [{...}, ...]}``, so
+    every object that closes directly inside one of the top-level arrays is a
+    complete basket line or meal, even though the whole reply isn't valid JSON
+    yet. Braces inside strings are ignored.
+    """
+
+    def __init__(self):
+        self._stack: list[str] = []
+        self._in_string = False
+        self._escaped = False
+        self._current: list[str] | None = None  # text of the object being read
+
+    def feed(self, text: str) -> list[dict]:
+        found = []
+        for ch in text:
+            if self._current is not None:
+                self._current.append(ch)
+            if self._in_string:
+                if self._escaped:
+                    self._escaped = False
+                elif ch == "\\":
+                    self._escaped = True
+                elif ch == '"':
+                    self._in_string = False
+                continue
+            if ch == '"':
+                self._in_string = True
+            elif ch in "{[":
+                if ch == "{" and self._stack == ["{", "["]:
+                    self._current = ["{"]
+                self._stack.append(ch)
+            elif ch in "}]" and self._stack:
+                self._stack.pop()
+                if ch == "}" and self._stack == ["{", "["] and self._current is not None:
+                    try:
+                        obj = json.loads("".join(self._current))
+                    except ValueError:
+                        obj = None
+                    if isinstance(obj, dict):
+                        found.append(obj)
+                    self._current = None
+        return found
+
+
+def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = None):
+    """Ask Claude for the plan and yield it piece by piece.
+
+    Yields ``("item", basket line)`` and ``("meal", meal)`` as each one is
+    finished, already priced and cleaned by ``finalize_plan``, and finally
+    ``("plan", (plan, stats))``: the fully validated plan, which is the source
+    of truth and replaces everything shown so far. Raises
+    ``ClaudeResponseError`` if the finished reply can't be used.
+    """
+    prompt = build_budget_prompt(profile, deals)
+    scanner = _ObjectScanner()
+    basket_so_far: list[dict] = []
+    sent_ids: set[int] = set()
+    for kind, payload in stream_claude_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS, model=model):
+        if kind == "done":
+            raw, stats = payload
+            yield "plan", (finalize_plan(raw, deals, profile), stats)
+            return
+        for obj in scanner.feed(payload):
+            if "uses" in obj or "servings" in obj:
+                meals = finalize_plan({"basket": basket_so_far, "meals": [obj]}, deals, profile, quiet=True)["meals"]
+                if meals and meals[0]["name"]:
+                    yield "meal", meals[0]
+            elif "id" in obj:
+                lines = finalize_plan({"basket": [obj]}, deals, profile, quiet=True)["basket"]
+                if lines and lines[0]["deal_id"] not in sent_ids:
+                    sent_ids.add(lines[0]["deal_id"])
+                    basket_so_far.append(obj)
+                    yield "item", lines[0]

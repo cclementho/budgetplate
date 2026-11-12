@@ -40,6 +40,7 @@ class ClaudeResponseError(Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
+        self.stats: dict = {}  # model, tokens and timing of the failed call
 
 
 def get_client() -> anthropic.Anthropic:
@@ -79,6 +80,57 @@ def _extract_json(text: str):
     raise ValueError("Could not parse JSON from model response")
 
 
+def _request(prompt: str, system: str | None, max_tokens: int, model: str | None) -> dict:
+    kwargs = {
+        "model": model or settings.CLAUDE_MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        kwargs["system"] = system
+    return kwargs
+
+
+def _parse_reply(response, text: str, kwargs: dict, elapsed_ms: int) -> tuple[object, dict]:
+    """Check a finished reply and return ``(parsed JSON, stats)``.
+
+    Raises ``ClaudeResponseError`` (with ``.stats`` attached) when the reply
+    was cut off, refused, empty or not JSON.
+    """
+    usage = getattr(response, "usage", None)
+    stats = {
+        "model": kwargs["model"],
+        "stop_reason": response.stop_reason,
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+        "claude_ms": elapsed_ms,
+    }
+    context = (
+        f"model={kwargs['model']} stop_reason={response.stop_reason} "
+        f"max_tokens={kwargs['max_tokens']} input_tokens={stats['input_tokens']} "
+        f"output_tokens={stats['output_tokens']} text_chars={len(text)} claude_ms={elapsed_ms}"
+    )
+
+    def fail(reason: str, message: str):
+        logger.error("%s: %s", message, context)
+        error = ClaudeResponseError(reason)
+        error.stats = stats
+        return error
+
+    if response.stop_reason == "max_tokens":
+        raise fail("max_tokens", "Claude response was cut off at max_tokens (thinking counts toward it)")
+    if response.stop_reason == "refusal":
+        raise fail("refusal", "Claude declined the request")
+    if not text.strip():
+        raise fail("empty", "Claude returned no text")
+    try:
+        parsed = _extract_json(text)
+    except ValueError:  # includes json.JSONDecodeError
+        raise fail("invalid_json", "Claude returned text that is not valid JSON") from None
+    logger.info("Claude call ok: %s", context)
+    return parsed, stats
+
+
 def call_claude_json(
     prompt: str,
     *,
@@ -92,13 +144,7 @@ def call_claude_json(
     model-comparison script); production callers leave it unset.
     """
     client = get_client()
-    kwargs = {
-        "model": model or settings.CLAUDE_MODEL,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        kwargs["system"] = system
+    kwargs = _request(prompt, system, max_tokens, model)
 
     _last_call.stats = {}
     started = time.perf_counter()
@@ -106,34 +152,47 @@ def call_claude_json(
     elapsed_ms = round((time.perf_counter() - started) * 1000)
     # Read text blocks only: newer models (e.g. Haiku 5.5) put thinking blocks first.
     text = "".join(block.text for block in response.content if block.type == "text")
-
-    usage = getattr(response, "usage", None)
-    context = (
-        f"model={kwargs['model']} stop_reason={response.stop_reason} max_tokens={max_tokens} "
-        f"input_tokens={getattr(usage, 'input_tokens', None)} "
-        f"output_tokens={getattr(usage, 'output_tokens', None)} text_chars={len(text)} "
-        f"claude_ms={elapsed_ms}"
-    )
-    _last_call.stats = {
-        "model": kwargs["model"],
-        "stop_reason": response.stop_reason,
-        "input_tokens": getattr(usage, "input_tokens", None),
-        "output_tokens": getattr(usage, "output_tokens", None),
-        "claude_ms": elapsed_ms,
-    }
-    if response.stop_reason == "max_tokens":
-        logger.error("Claude response was cut off at max_tokens (thinking counts toward it): %s", context)
-        raise ClaudeResponseError("max_tokens")
-    if response.stop_reason == "refusal":
-        logger.error("Claude declined the request: %s", context)
-        raise ClaudeResponseError("refusal")
-    if not text.strip():
-        logger.error("Claude returned no text: %s", context)
-        raise ClaudeResponseError("empty")
     try:
-        parsed = _extract_json(text)
-    except ValueError:  # includes json.JSONDecodeError
-        logger.error("Claude returned text that is not valid JSON: %s", context)
-        raise ClaudeResponseError("invalid_json") from None
-    logger.info("Claude call ok: %s", context)
+        parsed, stats = _parse_reply(response, text, kwargs, elapsed_ms)
+    except ClaudeResponseError as exc:
+        _last_call.stats = exc.stats
+        raise
+    _last_call.stats = stats
     return parsed
+
+
+def stream_claude_json(
+    prompt: str,
+    *,
+    system: str | None = None,
+    max_tokens: int = 4096,
+    model: str | None = None,
+):
+    """Stream a Claude reply: yields ``("text", chunk)`` as it is written, then
+    ``("done", (parsed JSON, stats))`` once the whole reply has been checked.
+
+    The same checks as ``call_claude_json`` run at the end and raise
+    ``ClaudeResponseError`` (stats on ``.stats``). ``stats`` also has
+    ``first_text_ms``, the wait before the first text arrived. Closing the
+    generator early ends the API request.
+    """
+    client = get_client()
+    kwargs = _request(prompt, system, max_tokens, model)
+    started = time.perf_counter()
+    first_text_ms = None
+    parts: list[str] = []
+    with client.messages.stream(**kwargs) as stream:
+        for chunk in stream.text_stream:  # text only; thinking is not included
+            if first_text_ms is None:
+                first_text_ms = round((time.perf_counter() - started) * 1000)
+            parts.append(chunk)
+            yield "text", chunk
+        response = stream.get_final_message()
+    elapsed_ms = round((time.perf_counter() - started) * 1000)
+    try:
+        parsed, stats = _parse_reply(response, "".join(parts), kwargs, elapsed_ms)
+    except ClaudeResponseError as exc:
+        exc.stats["first_text_ms"] = first_text_ms
+        raise
+    stats["first_text_ms"] = first_text_ms
+    yield "done", (parsed, stats)

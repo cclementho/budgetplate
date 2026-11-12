@@ -1,14 +1,16 @@
 """Budget-mode endpoint: build a weekly basket from a store's deals + preferences."""
 
+import json
 import logging
 import re
 import time
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ai.budget import generate_budget_plan
+from ai.budget import generate_budget_plan, servings_target, stream_budget_plan
 from ai.candidates import bucket_for, cuisine_note, select_candidates
 from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
@@ -233,6 +235,83 @@ def _filter_deals(
     return kept, unique_skipped
 
 
+def _plan_profile(profile: BudgetProfile) -> dict:
+    return {
+        "budget": profile.budget,
+        "people": profile.people,
+        "cuisines": profile.cuisines,
+        "restriction": profile.restriction,
+        "pantry": profile.pantry,
+        "appliances": profile.appliances,
+        "include_breakfast": profile.include_breakfast,
+        "merchant": profile.merchant,
+    }
+
+
+def _prepare(profile: BudgetProfile, postal_code: str, watch: _Stopwatch) -> dict | None:
+    """Everything before the Claude call: fresh data, deals, filtering, shortlist.
+
+    Returns None when the store has no deals this week.
+    """
+    if not watch.time("fresh_check_ms", has_fresh_data, postal_code):
+        watch.time("pipeline_ms", run_pipeline, postal_code)
+
+    deals = watch.time("get_items_ms", get_items, postal_code, merchant=profile.merchant)
+    if not deals:
+        return None
+
+    filtered, skipped_pantry = watch.time(
+        "filter_ms", _filter_deals, deals, profile.restriction, profile.pantry
+    )
+    # Cut 400+ deals down to a balanced, good-value shortlist for Claude.
+    candidates = watch.time("prefilter_ms", select_candidates, filtered, profile.cuisines)
+    return {
+        "candidates": candidates,
+        "deals_available": len(filtered),
+        "skipped_pantry": skipped_pantry,
+        # Say so up front when the store has little for the shopper's cuisine.
+        "cuisine_note": cuisine_note(candidates, profile.cuisines, profile.merchant),
+    }
+
+
+def _no_deals(profile: BudgetProfile, postal_code: str) -> dict:
+    return {
+        "postal_code": postal_code,
+        "merchant": profile.merchant,
+        "plan": None,
+        "message": "No deals found at this store this week.",
+    }
+
+
+def _response(profile: BudgetProfile, postal_code: str, prep: dict, plan: dict) -> dict:
+    # Prices, subtotals and the total were computed from the flyer in
+    # ai.budget.finalize_plan, not by the model.
+    estimated = plan["estimated_total"] if plan["basket"] else None
+    return {
+        "postal_code": postal_code,
+        "merchant": profile.merchant,
+        "budget": profile.budget,
+        "estimated_total": estimated,
+        "under_budget": (estimated is not None and estimated <= profile.budget),
+        # Deals left out because the shopper already has them.
+        "skipped_pantry_items": prep["skipped_pantry"],
+        # Set when fewer than 5 shortlisted deals fit the shopper's cuisines.
+        "cuisine_note": prep["cuisine_note"],
+        "plan": plan,
+    }
+
+
+def _log_timing(profile, postal_code, outcome, watch, prep, stats) -> None:
+    """One line per request so Render logs show where the time went."""
+    logger.info(
+        "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_available=%d "
+        "deals_sent=%d model=%s input_tokens=%s output_tokens=%s",
+        postal_code, profile.merchant, outcome, watch.summary(),
+        prep["deals_available"] if prep else 0, len(prep["candidates"]) if prep else 0,
+        stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
+    )
+
+
 @router.post("/budget-plan")
 def budget_plan(profile: BudgetProfile) -> dict:
     """Build a weekly basket for the shopper's chosen store.
@@ -244,77 +323,102 @@ def budget_plan(profile: BudgetProfile) -> dict:
     """
     postal_code = profile.postal_code.replace(" ", "").upper()
     watch = _Stopwatch()
-    deals_available = deals_sent = 0
+    prep = None
     outcome = "ok"
     try:
-        if not watch.time("fresh_check_ms", has_fresh_data, postal_code):
-            watch.time("pipeline_ms", run_pipeline, postal_code)
-
-        deals = watch.time("get_items_ms", get_items, postal_code, merchant=profile.merchant)
-        if not deals:
+        prep = _prepare(profile, postal_code, watch)
+        if prep is None:
             outcome = "no_deals"
-            return {
-                "postal_code": postal_code,
-                "merchant": profile.merchant,
-                "plan": None,
-                "message": "No deals found at this store this week.",
-            }
-
-        filtered, skipped_pantry = watch.time(
-            "filter_ms", _filter_deals, deals, profile.restriction, profile.pantry
-        )
-        # Cut 400+ deals down to a balanced, good-value shortlist for Claude.
-        candidates = watch.time(
-            "prefilter_ms", select_candidates, filtered, profile.cuisines
-        )
-        deals_available, deals_sent = len(filtered), len(candidates)
-        # Say so up front when the store has little for the shopper's cuisine.
-        note = cuisine_note(candidates, profile.cuisines, profile.merchant)
-
+            return _no_deals(profile, postal_code)
         try:
             plan = watch.time(
-                "claude_ms",
-                generate_budget_plan,
-                {
-                    "budget": profile.budget,
-                    "people": profile.people,
-                    "cuisines": profile.cuisines,
-                    "restriction": profile.restriction,
-                    "pantry": profile.pantry,
-                    "appliances": profile.appliances,
-                    "include_breakfast": profile.include_breakfast,
-                    "merchant": profile.merchant,
-                },
-                candidates,
+                "claude_ms", generate_budget_plan, _plan_profile(profile), prep["candidates"]
             )
         except ClaudeResponseError as exc:
             # Already logged with stop_reason and token counts in ai.client.
             outcome = f"claude_{exc.reason}"
             raise HTTPException(status_code=502, detail=PLAN_FAILED_MESSAGE)
     finally:
-        # One line per request so Render logs show where the time went.
         stats = last_call_stats() if "claude_ms" in watch.stages else {}
-        logger.info(
-            "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_available=%d "
-            "deals_sent=%d model=%s input_tokens=%s output_tokens=%s",
-            postal_code, profile.merchant, outcome, watch.summary(), deals_available,
-            deals_sent,
-            stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
-        )
+        _log_timing(profile, postal_code, outcome, watch, prep, stats)
 
-    # Prices, subtotals and the total were computed from the flyer in
-    # ai.budget.finalize_plan, not by the model.
-    estimated = plan["estimated_total"] if plan["basket"] else None
+    return _response(profile, postal_code, prep, plan)
 
-    return {
-        "postal_code": postal_code,
-        "merchant": profile.merchant,
-        "budget": profile.budget,
-        "estimated_total": estimated,
-        "under_budget": (estimated is not None and estimated <= profile.budget),
-        # Deals left out because the shopper already has them.
-        "skipped_pantry_items": skipped_pantry,
-        # Set when fewer than 5 shortlisted deals fit the shopper's cuisines.
-        "cuisine_note": note,
-        "plan": plan,
-    }
+
+def _sse(event: str, data: dict) -> str:
+    """One server-sent event."""
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@router.post("/budget-plan/stream")
+def budget_plan_stream(profile: BudgetProfile):
+    """The same plan as /budget-plan, sent as it is written (server-sent events).
+
+    Events, in order:
+      start  what is known before Claude answers (pantry items left out,
+             cuisine note, servings target)
+      item   one basket line, priced from the flyer, as soon as it is complete
+      meal   one meal, as soon as it is complete
+      done   the full, validated /budget-plan response; it replaces whatever
+             was shown from item and meal events
+      error  {"detail": ...} if the plan could not be finished
+
+    Problems found before the Claude call (no deals, bad input) are returned
+    as ordinary JSON responses, exactly as /budget-plan does.
+    """
+    postal_code = profile.postal_code.replace(" ", "").upper()
+    watch = _Stopwatch()
+    try:
+        prep = _prepare(profile, postal_code, watch)
+    except Exception:
+        _log_timing(profile, postal_code, "error", watch, None, {})
+        raise
+    if prep is None:
+        _log_timing(profile, postal_code, "no_deals", watch, None, {})
+        return _no_deals(profile, postal_code)
+
+    plan_profile = _plan_profile(profile)
+
+    def events():
+        outcome = "client_gone"  # replaced unless the shopper leaves mid-stream
+        stats: dict = {}
+        started = time.perf_counter()
+        try:
+            yield _sse("start", {
+                "postal_code": postal_code,
+                "merchant": profile.merchant,
+                "budget": profile.budget,
+                "skipped_pantry_items": prep["skipped_pantry"],
+                "cuisine_note": prep["cuisine_note"],
+                "servings_target": servings_target(profile.people, profile.include_breakfast),
+                "include_breakfast": profile.include_breakfast,
+            })
+            for kind, payload in stream_budget_plan(plan_profile, prep["candidates"]):
+                if kind == "plan":
+                    plan, stats = payload
+                    outcome = "ok"
+                    yield _sse("done", _response(profile, postal_code, prep, plan))
+                else:
+                    if "first_item_ms" not in watch.stages:
+                        watch.stages["first_item_ms"] = round((time.perf_counter() - started) * 1000)
+                    yield _sse(kind, payload)
+        except ClaudeResponseError as exc:
+            stats = exc.stats
+            outcome = f"claude_{exc.reason}"
+            yield _sse("error", {"detail": PLAN_FAILED_MESSAGE})
+        except Exception:
+            outcome = "error"
+            logger.exception("budget plan stream failed")
+            yield _sse("error", {"detail": PLAN_FAILED_MESSAGE})
+        finally:
+            watch.stages["claude_ms"] = stats.get(
+                "claude_ms", round((time.perf_counter() - started) * 1000)
+            )
+            _log_timing(profile, postal_code, outcome, watch, prep, stats)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Tell proxies not to hold the events back.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

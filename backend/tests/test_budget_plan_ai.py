@@ -344,6 +344,8 @@ def test_every_basket_item_gets_a_size_when_the_flyer_has_one():
     assert pack_size({"clean_name": "Baby Carrots", "weight_kg": 0.34}) == "340 g"
     assert pack_size({"clean_name": "Aman's Lentils", "weight_kg": 1.81}) == "1.81 kg"
     assert pack_size({"clean_name": "Large Eggs 12 Pk"}) == "12 pack"
+    assert pack_size({"clean_name": "Natrel Fine Filtered Milk 2 L Skim, 1 or 2%", "weight_kg": 2.0}) == "2 L"
+    assert pack_size({"clean_name": "Kikkoman Soy Sauce 591 Ml", "weight_kg": 0.591}) == "591 mL"
     assert pack_size({"clean_name": "Bok Choy"}) is None                       # UI shows "1 pack"
     assert pack_size({"clean_name": "Pork Roast", "priced_per": "lb", "price_per_kg": 4.41,
                       "weight_kg": 2.0}) is None                               # bought by the kg
