@@ -17,7 +17,7 @@ import re
 
 from ai.candidates import _words, bucket_for
 from ai.client import ClaudeResponseError, call_claude_json, last_call_stats, stream_claude_json
-from ai.plan_checks import validate_plan
+from ai.plan_checks import RENAMEABLE, missing_named_ingredients, validate_plan
 from config import settings
 
 logger = logging.getLogger("budgetplate.budget")
@@ -423,9 +423,16 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
     }
 
 
-# How often a plan needed a second call, since this process started.
+# How often a plan needed a correction, since this process started. A retry is
+# a second full plan call; a rename is a small call that only fixes meal names.
 _plans_made = 0
 _plans_retried = 0
+_plans_renamed = 0
+
+RENAME_SYSTEM_PROMPT = (
+    "You name home-cooked meals accurately. You ONLY ever respond with valid JSON."
+)
+RENAME_MAX_TOKENS = 400
 
 
 def _retry_note(problems: list[dict]) -> str:
@@ -434,15 +441,14 @@ def _retry_note(problems: list[dict]) -> str:
         "That plan has problems. Fix ONLY these and return the complete corrected plan as JSON in the "
         "same schema, with nothing else:\n"
         f"{lines}\n"
-        "For each one, either add the missing ingredient to the basket (by its ID from the deal list) "
-        "and to the meal's \"uses\", or rename or replace the meal so its name matches what it is "
-        "made of. Keep the basket within the budget."
+        "Change the meals or the basket as needed (choose deals by ID from the list) and keep the "
+        "basket within the budget."
     )
 
 
 def _add_stats(total: dict, stats: dict) -> None:
     """Fold one call's stats into the running totals for the request."""
-    total["model"] = stats.get("model") or total.get("model")
+    total["model"] = total.get("model") or stats.get("model")
     total["calls"] = total.get("calls", 0) + 1
     for key in ("input_tokens", "output_tokens", "claude_ms"):
         if stats.get(key) is not None:
@@ -455,32 +461,9 @@ def _checked(raw, deals: list[dict], profile: dict) -> tuple[dict, dict]:
     return validate_plan(finalize_plan(raw, deals, profile), profile)
 
 
-def _finish(first: tuple[dict, dict], second: tuple[dict, dict] | None, stats: dict) -> dict:
-    """Pick the plan to return and record what happened in ``stats``.
-
-    The corrected plan wins unless it has more problems than the first.
-    """
-    global _plans_made, _plans_retried
-    _plans_made += 1
-    plan, report = first
-    if second is not None:
-        _plans_retried += 1
-        if len(second[1]["problems"]) <= len(report["problems"]):
-            plan, report = second
-    stats.update(
-        retried=second is not None,
-        problems_first=len(first[1]["problems"]),
-        problems=len(report["problems"]),
-        fixes=len(report["fixes"]),
-    )
-    if report["fixes"] or report["problems"] or second is not None:
-        logger.info(
-            "budget plan validation: retried=%s fixes=%s problems_first=%s problems_left=%s "
-            "(retries so far: %d of %d plans)",
-            second is not None, report["fixes"], [p["detail"] for p in first[1]["problems"]],
-            [p["detail"] for p in report["problems"]], _plans_retried, _plans_made,
-        )
-    return plan
+def _hard_problems(report: dict) -> list[dict]:
+    """Problems only a new plan can settle (a new name can't)."""
+    return [p for p in report["problems"] if p["type"] not in RENAMEABLE]
 
 
 def _second_attempt(prompt: str, raw, problems: list[dict], deals, profile, model, stats) -> tuple[dict, dict] | None:
@@ -500,6 +483,100 @@ def _second_attempt(prompt: str, raw, problems: list[dict], deals, profile, mode
     return _checked(raw2, deals, profile)
 
 
+def _rename_prompt(flagged: list[tuple[int, dict, list[str]]]) -> str:
+    meals = "\n".join(
+        f"{number}. \"{meal['name']}\" is made from: "
+        f"{', '.join((meal.get('uses') or []) + (meal.get('from_home') or [])) or 'nothing listed'}. "
+        f"Its name mentions {', '.join(labels)}, which it does not contain."
+        for number, meal, labels in flagged
+    )
+    return (
+        "These meal names promise ingredients the meals do not contain. Give each one a short, accurate "
+        "name for the dish that those ingredients really make. Use only ingredients it is made from; "
+        "do not mention anything else.\n\n"
+        f"{meals}\n\n"
+        'Return ONLY JSON: {"names": [{"meal": <number>, "name": "<new name>"}]}'
+    )
+
+
+def _rename_meals(plan: dict, report: dict, profile: dict, model, stats: dict) -> tuple[dict, dict, int]:
+    """Fix meal names that promise a missing ingredient with one small call.
+
+    Only the flagged meals are sent (name and ingredients), not the plan. A new
+    name is kept only if it is more accurate than the old one. Returns the
+    plan, its fresh report and how many meals were renamed; any failure leaves
+    the plan as it was.
+    """
+    basket = plan["basket"]
+    flagged = []
+    for index, meal in enumerate(plan["meals"]):
+        labels = missing_named_ingredients(meal, basket)
+        if labels:
+            flagged.append((index + 1, meal, labels))
+    if not flagged:
+        return plan, report, 0
+    try:
+        reply = call_claude_json(_rename_prompt(flagged), system=RENAME_SYSTEM_PROMPT,
+                                 max_tokens=RENAME_MAX_TOKENS, model=model)
+    except ClaudeResponseError as exc:
+        _add_stats(stats, exc.stats)
+        logger.warning("meal rename call failed (%s); names left as they were", exc.reason)
+        return plan, report, 0
+    _add_stats(stats, last_call_stats())
+
+    wanted = {}
+    for entry in (reply.get("names") if isinstance(reply, dict) else None) or []:
+        if isinstance(entry, dict) and _number(entry.get("meal")) is not None:
+            wanted[int(_number(entry["meal"]))] = str(entry.get("name") or "").strip()
+    meals = [dict(meal) for meal in plan["meals"]]
+    renamed = []
+    for number, meal, labels in flagged:
+        new_name = wanted.get(number)
+        if not new_name or new_name == meal["name"]:
+            continue
+        if len(missing_named_ingredients({**meal, "name": new_name}, basket)) < len(labels):
+            renamed.append((meal["name"], new_name))
+            meals[number - 1]["name"] = new_name
+    if not renamed:
+        return plan, report, 0
+    logger.info("meal names corrected: %s", renamed)
+    fixed, new_report = validate_plan({**plan, "meals": meals}, profile)
+    new_report["fixes"] = report["fixes"] + new_report["fixes"]
+    return fixed, new_report, len(renamed)
+
+
+def _settle(first: tuple[dict, dict], second: tuple[dict, dict] | None, profile, model, stats: dict) -> dict:
+    """Choose between the first plan and the corrected one, fix names, record stats.
+
+    The corrected plan wins unless it has more problems than the first.
+    """
+    global _plans_made, _plans_retried, _plans_renamed
+    _plans_made += 1
+    plan, report = first
+    if second is not None:
+        _plans_retried += 1
+        if (len(_hard_problems(second[1])), len(second[1]["problems"])) <= \
+                (len(_hard_problems(report)), len(report["problems"])):
+            plan, report = second
+    plan, report, renamed = _rename_meals(plan, report, profile, model, stats)
+    _plans_renamed += bool(renamed)
+    stats.update(
+        retried=second is not None,
+        renames=renamed,
+        problems_first=len(first[1]["problems"]),
+        problems=len(report["problems"]),
+        fixes=len(report["fixes"]),
+    )
+    if report["fixes"] or first[1]["problems"] or second is not None:
+        logger.info(
+            "budget plan validation: retried=%s renames=%d fixes=%s problems_first=%s problems_left=%s "
+            "(so far: %d full retries and %d renamed plans in %d plans)",
+            second is not None, renamed, report["fixes"], [p["detail"] for p in first[1]["problems"]],
+            [p["detail"] for p in report["problems"]], _plans_retried, _plans_renamed, _plans_made,
+        )
+    return plan
+
+
 def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = None,
                          stats: dict | None = None) -> dict:
     """Ask Claude for the week's plan and return it priced, checked and repaired.
@@ -509,10 +586,16 @@ def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = N
     leave it unset in production.
 
     The reply is priced from the flyer (``finalize_plan``) and then checked
-    (``ai.plan_checks.validate_plan``). If a meal still has a problem Python
-    can't repair, Claude is asked once for a corrected plan and the better of
-    the two is returned. ``stats``, if given, is filled with the tokens and
-    time of all calls plus ``retried``, ``problems`` and ``fixes``.
+    (``ai.plan_checks.validate_plan``), which repairs what Python can. Then:
+
+    - a problem that needs the plan changed (a breakfast with potatoes, a
+      basket that can't be brought under budget) gets ONE full retry, and the
+      better of the two plans is kept;
+    - a meal whose name promises a missing ingredient gets a small rename
+      call that sees only those meals.
+
+    ``stats``, if given, is filled with the tokens and time of all calls plus
+    ``retried``, ``renames``, ``problems`` and ``fixes``.
     """
     stats = stats if stats is not None else {}
     prompt = build_budget_prompt(profile, deals)
@@ -524,9 +607,10 @@ def generate_budget_plan(profile: dict, deals: list[dict], model: str | None = N
     _add_stats(stats, last_call_stats())
     first = _checked(raw, deals, profile)
     second = None
-    if first[1]["problems"]:
-        second = _second_attempt(prompt, raw, first[1]["problems"], deals, profile, model, stats)
-    return _finish(first, second, stats)
+    hard = _hard_problems(first[1])
+    if hard:
+        second = _second_attempt(prompt, raw, hard, deals, profile, model, stats)
+    return _settle(first, second, profile, model, stats)
 
 
 class _ObjectScanner:
@@ -587,9 +671,9 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
     Yields ``("item", basket line)`` and ``("meal", meal)`` as each one is
     finished, already priced and cleaned by ``finalize_plan``, and finally
     ``("plan", (plan, stats))``: the fully validated plan, which is the source
-    of truth and replaces everything shown so far. If the plan needs a
+    of truth and replaces everything shown so far. If the plan needs a full
     correction call, ``("retry", {"problems": [...]})`` is yielded first; that
-    second call is not streamed. Raises ``ClaudeResponseError`` if the first
+    second call, and the small call that fixes meal names, are not streamed. Raises ``ClaudeResponseError`` if the first
     reply can't be used.
     """
     prompt = build_budget_prompt(profile, deals)
@@ -603,10 +687,11 @@ def stream_budget_plan(profile: dict, deals: list[dict], model: str | None = Non
             _add_stats(stats, call_stats)
             first = _checked(raw, deals, profile)
             second = None
-            if first[1]["problems"]:
-                yield "retry", {"problems": [p["detail"] for p in first[1]["problems"]]}
-                second = _second_attempt(prompt, raw, first[1]["problems"], deals, profile, model, stats)
-            yield "plan", (_finish(first, second, stats), stats)
+            hard = _hard_problems(first[1])
+            if hard:
+                yield "retry", {"problems": [p["detail"] for p in hard]}
+                second = _second_attempt(prompt, raw, hard, deals, profile, model, stats)
+            yield "plan", (_settle(first, second, profile, model, stats), stats)
             return
         for obj in scanner.feed(payload):
             if "uses" in obj or "servings" in obj:

@@ -313,7 +313,8 @@ def test_breakfasts_are_labelled_and_the_route_takes_the_toggle(claude, monkeypa
     assert client.post("/api/budget-plan", json=base).json()["plan"]["servings_target"] == 21   # on by default
     body = client.post("/api/budget-plan", json={**base, "include_breakfast": False}).json()
     assert body["plan"]["servings_target"] == 14
-    assert "lunches and dinners for this shopper" in claude.requests[-1]["messages"][0]["content"]
+    assert any("Plan ONE week of lunches and dinners for this shopper" in r["messages"][0]["content"]
+               for r in claude.requests)
 
 
 def test_prompt_demands_real_recipes():

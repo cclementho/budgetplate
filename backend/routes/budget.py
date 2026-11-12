@@ -310,11 +310,11 @@ def _log_timing(profile, postal_code, outcome, watch, prep, stats) -> None:
     logger.info(
         "budget_plan timing: postal=%s merchant=%s outcome=%s %s deals_available=%d "
         "deals_sent=%d model=%s input_tokens=%s output_tokens=%s calls=%s retried=%s "
-        "problems=%s fixes=%s",
+        "renames=%s problems=%s fixes=%s",
         postal_code, profile.merchant, outcome, watch.summary(),
         prep["deals_available"] if prep else 0, len(prep["candidates"]) if prep else 0,
         stats.get("model"), stats.get("input_tokens"), stats.get("output_tokens"),
-        stats.get("calls", 0), int(bool(stats.get("retried"))), stats.get("problems", 0),
+        stats.get("calls", 0), int(bool(stats.get("retried"))), stats.get("renames", 0), stats.get("problems", 0),
         stats.get("fixes", 0),
     )
 

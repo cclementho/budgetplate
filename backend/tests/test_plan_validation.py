@@ -92,22 +92,36 @@ def test_a_name_that_promises_a_missing_ingredient_is_a_problem_not_a_fix():
     assert "named for egg" in report["problems"][0]["detail"]
 
 
-# --- one retry ------------------------------------------------------------------
+# --- corrections: a small rename call, or one full retry ---------------------------
 
-BAD = {"basket": [{"id": 1, "name": "Bread", "quantity": 1}],
-       "meals": [{"name": "Scrambled Eggs & Toast", "servings": 7, "uses": [1], "from_home": ["eggs"]},
-                 {"name": "Toast", "servings": 7, "uses": [1]}]}
+BREAKFAST = {**PROFILE, "include_breakfast": True}
+
+# Named for eggs it doesn't have: a new name settles it.
+MISNAMED = {"basket": [{"id": 1, "name": "Bread", "quantity": 1}],
+            "meals": [{"name": "Scrambled Eggs & Toast", "servings": 7, "uses": [1], "from_home": ["eggs"]},
+                      {"name": "Toast", "servings": 7, "uses": [1]}]}
+# A breakfast with onion: the plan itself has to change.
+ONION_BREAKFAST = {"basket": [{"id": 1, "name": "Bread", "quantity": 1}, {"id": 4, "name": "Jam", "quantity": 1}],
+                   "meals": [{"name": "Onion jam on toast", "meal": "breakfast", "servings": 7, "uses": [1, 4]},
+                             {"name": "Toast", "servings": 14, "uses": [1]}]}
 GOOD = {"basket": [{"id": 1, "name": "Bread", "quantity": 1}, {"id": 3, "name": "Eggs", "quantity": 1}],
-        "meals": [{"name": "Scrambled Eggs & Toast", "servings": 7, "uses": [1, 3]},
-                  {"name": "Toast", "servings": 7, "uses": [1]}]}
+        "meals": [{"name": "Scrambled Eggs & Toast", "meal": "breakfast", "servings": 7, "uses": [1, 3]},
+                  {"name": "Toast", "servings": 14, "uses": [1]}]}
 WORSE = {"basket": [{"id": 1, "name": "Bread", "quantity": 1}],
-         "meals": [{"name": "Scrambled Eggs & Toast", "servings": 7, "uses": [1]},
-                   {"name": "Pork and Mushroom Stir Fry", "servings": 7, "uses": [1]}]}
+         "meals": [{"name": "Potato hash", "meal": "breakfast", "servings": 7, "uses": [1]},
+                   {"name": "Onion toast", "meal": "breakfast", "servings": 7, "uses": [1]}]}
 
 
 def reply(plan, stop_reason="end_turn"):
     return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(plan))], stop_reason=stop_reason,
                            usage=SimpleNamespace(input_tokens=4000, output_tokens=1000))
+
+
+def names(*pairs):
+    """A rename reply: names((1, "Toast"))."""
+    small = reply({"names": [{"meal": n, "name": name} for n, name in pairs]})
+    small.usage = SimpleNamespace(input_tokens=150, output_tokens=30)
+    return small
 
 
 @pytest.fixture
@@ -145,55 +159,94 @@ def test_a_clean_plan_is_one_call(claude):
     stats = {}
     plan = generate_budget_plan(PROFILE, DEALS, stats=stats)
     assert len(claude.requests) == 1 and plan["estimated_total"] == 7.0
-    assert (stats["calls"], stats["retried"], stats["problems"], stats["input_tokens"]) == (1, False, 0, 4000)
+    assert (stats["calls"], stats["retried"], stats["renames"], stats["problems"]) == (1, False, 0, 0)
+    assert stats["input_tokens"] == 4000
 
 
-def test_a_flagged_meal_triggers_one_retry_that_lists_the_problem(claude, caplog):
-    claude.replies = [reply(BAD), reply(GOOD)]
+def test_a_misnamed_meal_gets_a_small_rename_call_not_a_full_retry(claude, caplog):
+    claude.replies = [reply(MISNAMED), names((1, "Plain toast"))]
     stats = {}
     with caplog.at_level(logging.INFO, logger="budgetplate.budget"):
         plan = generate_budget_plan(PROFILE, DEALS, stats=stats)
 
     assert len(claude.requests) == 2
-    first, retry = claude.requests
-    assert len(first["messages"]) == 1 and [m["role"] for m in retry["messages"]] == ["user", "assistant", "user"]
-    assert retry["messages"][0] == first["messages"][0]                    # same prompt
-    assert json.loads(retry["messages"][1]["content"]) == BAD              # its own earlier answer
-    note = retry["messages"][2]["content"]
-    assert '"Scrambled Eggs & Toast" is named for egg but uses none' in note and note.count("\n- ") == 1
+    rename = claude.requests[1]
+    text = rename["messages"][0]["content"]
+    assert len(rename["messages"]) == 1 and rename["max_tokens"] == 400       # small and on its own
+    assert '1. "Scrambled Eggs & Toast" is made from: Bread.' in text and "mentions egg" in text
+    assert '"Toast" is made from' not in text                                  # only the flagged meal
+    assert "DEALS ON SALE" not in text and "Villaggio" not in text             # not the plan or the flyer
 
-    assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"]         # the corrected plan
-    assert (stats["calls"], stats["retried"], stats["problems_first"], stats["problems"]) == (2, True, 1, 0)
-    assert stats["input_tokens"] == 8000 and stats["output_tokens"] == 2000  # both calls counted
-    assert "retried=True" in caplog.text and "retries so far:" in caplog.text
+    assert [m["name"] for m in plan["meals"]] == ["Plain toast", "Toast"]
+    assert [l["name"] for l in plan["basket"]] == ["Bread"]                    # the basket is untouched
+    assert (stats["calls"], stats["retried"], stats["renames"]) == (2, False, 1)
+    assert (stats["problems_first"], stats["problems"]) == (1, 0)
+    assert (stats["input_tokens"], stats["output_tokens"]) == (4150, 1030)     # both calls counted
+    assert "retried=False renames=1" in caplog.text and "full retries and" in caplog.text
 
 
-def test_when_the_retry_is_no_better_the_better_plan_is_kept(claude):
-    claude.replies = [reply(BAD), reply(WORSE)]
+def test_a_new_name_is_kept_only_if_it_is_more_accurate(claude):
+    claude.replies = [reply(MISNAMED), names((1, "Egg and cheese toast"))]     # still promises egg, adds cheese
     stats = {}
     plan = generate_budget_plan(PROFILE, DEALS, stats=stats)
-    assert len(claude.requests) == 2                                        # never a third call
-    assert [m["name"] for m in plan["meals"]] == ["Scrambled Eggs & Toast", "Toast"]   # first plan: 1 problem vs 3
-    assert (stats["retried"], stats["problems_first"], stats["problems"]) == (True, 1, 1)
+    assert plan["meals"][0]["name"] == "Scrambled Eggs & Toast"
+    assert (stats["renames"], stats["problems"]) == (0, 1)
+
+    claude.replies = [reply(MISNAMED), reply({"names": "nonsense"}, stop_reason="max_tokens")]
+    assert generate_budget_plan(PROFILE, DEALS)["meals"][0]["name"] == "Scrambled Eggs & Toast"
+
+
+def test_a_problem_python_cannot_fix_triggers_one_full_retry(claude, caplog):
+    claude.replies = [reply(ONION_BREAKFAST), reply(GOOD)]
+    stats = {}
+    with caplog.at_level(logging.INFO, logger="budgetplate.budget"):
+        plan = generate_budget_plan(BREAKFAST, DEALS, stats=stats)
+
+    assert len(claude.requests) == 2
+    first, retry = claude.requests
+    assert [m["role"] for m in retry["messages"]] == ["user", "assistant", "user"]
+    assert retry["messages"][0] == first["messages"][0]                        # same prompt
+    assert json.loads(retry["messages"][1]["content"]) == ONION_BREAKFAST      # its own earlier answer
+    note = retry["messages"][2]["content"]
+    assert 'the breakfast "Onion jam on toast" contains onion' in note
+    assert "named for" not in note                                              # name problems aren't sent here
+
+    assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"]            # the corrected plan
+    assert (stats["calls"], stats["retried"], stats["renames"], stats["problems"]) == (2, True, 0, 0)
+    assert "retried=True renames=0" in caplog.text and "renamed plans in" in caplog.text
+
+
+def test_when_the_retry_is_no_better_the_first_plan_is_kept_and_then_renamed(claude):
+    claude.replies = [reply(ONION_BREAKFAST), reply(WORSE), names((1, "Jam on toast"))]
+    stats = {}
+    plan = generate_budget_plan(BREAKFAST, DEALS, stats=stats)
+    assert len(claude.requests) == 3                                            # never a second full retry
+    assert [m["name"] for m in plan["meals"]] == ["Jam on toast", "Toast"]      # first plan, with an honest name
+    assert (stats["calls"], stats["retried"], stats["renames"], stats["problems"]) == (3, True, 1, 0)
 
 
 def test_a_retry_that_fails_keeps_the_first_plan(claude):
-    claude.replies = [reply(BAD), reply(GOOD, stop_reason="max_tokens")]
+    claude.replies = [reply(ONION_BREAKFAST), reply(GOOD, stop_reason="max_tokens"), names()]
     stats = {}
-    plan = generate_budget_plan(PROFILE, DEALS, stats=stats)
-    assert [l["name"] for l in plan["basket"]] == ["Bread"]
-    assert (stats["calls"], stats["retried"], stats["problems"]) == (2, False, 1)
+    plan = generate_budget_plan(BREAKFAST, DEALS, stats=stats)
+    assert [l["name"] for l in plan["basket"]] == ["Bread", "Jam"]
+    assert stats["retried"] is False and stats["problems"] == 2                 # onion at breakfast, and its name
 
 
-def test_the_stream_announces_the_retry_and_ends_with_the_corrected_plan(claude):
-    claude.replies = [reply(BAD), reply(GOOD)]
-    events = list(stream_budget_plan(PROFILE, DEALS))
-    kinds = [kind for kind, _ in events]
-    assert kinds == ["item", "meal", "meal", "retry", "plan"]
-    assert "named for egg" in events[3][1]["problems"][0]
+def test_the_stream_announces_a_full_retry_but_not_a_rename(claude):
+    claude.replies = [reply(ONION_BREAKFAST), reply(GOOD)]
+    events = list(stream_budget_plan(BREAKFAST, DEALS))
+    assert [kind for kind, _ in events] == ["item", "item", "meal", "meal", "retry", "plan"]
+    assert "contains onion" in events[4][1]["problems"][0]
     plan, stats = events[-1][1]
     assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"] and stats["retried"] is True
-    assert "stream" not in claude.requests[1]                              # the correction is a plain call
+    assert "stream" not in claude.requests[1]                                   # the correction is a plain call
+
+    claude.replies = [reply(MISNAMED), names((1, "Plain toast"))]
+    events = list(stream_budget_plan(PROFILE, DEALS))
+    assert [kind for kind, _ in events] == ["item", "meal", "meal", "plan"]     # no retry event
+    plan, stats = events[-1][1]
+    assert plan["meals"][0]["name"] == "Plain toast" and (stats["retried"], stats["renames"]) == (False, 1)
 
 
 # --- breakfast --------------------------------------------------------------------
