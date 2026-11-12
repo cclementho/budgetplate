@@ -216,3 +216,12 @@ def test_breakfasts_with_potato_or_onion_are_flagged():
     prompt = build_budget_prompt({**PROFILE, "include_breakfast": True}, DEALS)
     assert "things people eat in the morning: eggs, oats, toast, congee, yogurt, fruit" in prompt
     assert "NEVER put potatoes or onion in a\n  breakfast" in prompt
+
+
+def test_one_drop_that_settles_the_budget_beats_several_small_ones():
+    plan = {"basket": [line("Pork", 30), line("Grapes", 1.5), line("Yams", 1), line("Chicken", 4), line("Beef", 9)],
+            "meals": [meal("Pork roast", ["Pork"]), meal("Fruit bowl with grapes", ["Grapes"]),
+                      meal("Baked yams", ["Yams"]), meal("Chicken soup", ["Chicken"]), meal("Beef stew", ["Beef"])]}
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 42.5})     # $45.50, so $3 over
+    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Grapes", "Yams", "Beef"]   # only the $4 chicken goes
+    assert len(report["fixes"]) == 1

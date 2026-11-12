@@ -169,9 +169,10 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
     - a meal takes something "from home" that isn't in the shopper's pantry:
       removed from the meal;
     - the basket is over budget: items no meal uses are dropped, cheapest
-      first; if it is still over, the item the fewest meals rely on (cheapest
-      on a tie) loses one unit, or is dropped when only one was bought, and
-      so on until it fits.
+      first; if it is still over, an item the fewest meals rely on loses one
+      unit, or is dropped when only one was bought, and so on until it fits.
+      Where one removal can settle it, the cheapest such item is chosen
+      rather than several smaller ones.
 
     Not fixable here (listed in ``problems``, each naming its meal):
     - a meal's name promises an ingredient the meal doesn't use;
@@ -203,9 +204,15 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
                 1 for meal in meals if _norm(line.get("name")) in {_norm(u) for u in meal.get("uses") or []})
             for line in basket
         }
-        victim = min(basket, key=lambda line: (relied_on[_norm(line.get("name"))] > 0,
-                                               relied_on[_norm(line.get("name"))],
-                                               float(line.get("subtotal") or 0)))
+        over = basket_total(basket) - float(budget)
+        fewest = min(relied_on.values())
+        tier = [line for line in basket if relied_on[_norm(line.get("name"))] == fewest]
+        # Among the items the fewest meals rely on, take the cheapest one whose
+        # removal settles it in one go; dropping several small items would
+        # damage more meals than dropping one. Otherwise the cheapest.
+        enough = [line for line in tier if float(line.get("subtotal") or 0) >= over - 0.005]
+        pool = enough if (fewest and enough) else tier
+        victim = min(pool, key=lambda line: float(line.get("subtotal") or 0))
         if relied_on[_norm(victim.get("name"))] and not victim.get("sold_by_weight") \
                 and float(victim.get("quantity") or 1) >= 2:
             # A meal needs it: buy one fewer rather than none.
