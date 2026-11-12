@@ -107,8 +107,9 @@ def test_prompt_without_breakfast_plans_lunches_and_dinners_only():
     assert "breakfast" not in prompt.lower()
     assert "spending up to it is fine" in prompt
     assert "Underspending is a WIN" not in prompt           # the old rule that starved baskets
-    assert "NO FILLER" in prompt and "FOOD ONLY" in prompt  # still never pad
-    assert "8 words or fewer" in prompt
+    assert "NO FILLER" in prompt                            # still never pad
+    assert '"why"' not in prompt                            # the model no longer explains each item
+    assert "FOOD ONLY" not in prompt and "SENSIBLE PACK SIZES" not in prompt   # Python enforces these now
     assert "estimated_total" not in prompt and '"subtotal"' not in prompt  # Python does the maths
 
 
@@ -116,7 +117,7 @@ def test_prompt_lists_deals_with_ids_the_model_must_use():
     prompt = build_budget_prompt(PROFILE, DEALS)
     assert "1 | Fresh Pork Shoulder Blade Roast | $8.80 | $8.80/kg | Meat & Seafood" in prompt
     assert "2 | Bok Choy | $1.99 | $n/a/kg | Produce" in prompt
-    assert "ALREADY HAS AT HOME (do not buy these; using them is optional): Rice, Soy sauce" in prompt
+    assert "ALREADY HAS AT HOME (using them is optional): Rice, Soy sauce" in prompt
 
 
 # --- pricing the model's choices in Python ----------------------------------------
@@ -186,7 +187,7 @@ def test_route_returns_the_python_priced_plan(claude, monkeypatch):
 
     monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
     monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
-    monkeypatch.setattr(routes.budget, "select_candidates", lambda deals, cuisines: deals)
+    monkeypatch.setattr(routes.budget, "select_candidates", lambda deals, cuisines, **kw: deals)
     claude.response = fake_response(text=json.dumps({
         "basket": [{"id": 1, "name": "Pork shoulder", "quantity": 15, "why": "protein"}],
         "meals": [{"name": "Braise", "servings": 14, "uses": [1]}]}))
@@ -315,16 +316,16 @@ def test_breakfasts_are_labelled_and_the_route_takes_the_toggle(claude, monkeypa
 
 def test_prompt_demands_real_recipes():
     prompt = build_budget_prompt(PROFILE, DEALS)
-    assert "8. REAL RECIPES ONLY" in prompt
+    assert "5. REAL RECIPES ONLY" in prompt
     assert "recognizable dish" in prompt and "ingredients that\n   dish actually needs" in prompt
     assert "leave it out of the\n   basket instead of forcing it into a meal" in prompt
 
 
 def test_prompt_says_pantry_items_are_available_not_required():
     prompt = build_budget_prompt(PROFILE, DEALS)
-    assert "do not buy these; using them is optional" in prompt
+    assert "ALREADY HAS AT HOME (using them is optional)" in prompt
     assert "AVAILABLE, not what must be used" in prompt
-    assert "only when\n   the dish genuinely calls for it" in prompt
+    assert "ingredients only when the dish genuinely calls for it" in prompt
 
 
 def test_route_returns_a_cuisine_note_when_few_deals_fit(claude, monkeypatch):
@@ -335,7 +336,6 @@ def test_route_returns_a_cuisine_note_when_few_deals_fit(claude, monkeypatch):
     body = TestClient(main.app).post("/api/budget-plan", json={
         "postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 60, "cuisines": ["Mexican"]}).json()
     assert body["cuisine_note"].startswith("Not many Mexican staples on sale at FreshCo")
-    assert 'Never call an ingredient "Chinese"' in build_budget_prompt(PROFILE, DEALS)
 
 
 def test_every_basket_item_gets_a_size_when_the_flyer_has_one():
@@ -351,8 +351,6 @@ def test_every_basket_item_gets_a_size_when_the_flyer_has_one():
                       "weight_kg": 2.0}) is None                               # bought by the kg
     plan = finalize_plan({"basket": [{"id": 2, "quantity": 1}]}, DEALS, PROFILE)
     assert "size" in plan["basket"][0]
-    prompt = build_budget_prompt(PROFILE, DEALS)
-    assert "SENSIBLE PACK SIZES" in prompt and "smallest pack that covers the servings" in prompt
 
 
 def test_groups_come_from_python_not_the_model():
@@ -377,14 +375,7 @@ def test_groups_come_from_python_not_the_model():
     assert plan["basket"][0]["group"] == "Produce"
 
 
-def test_why_line_is_capped_at_eight_words():
-    long_why = "Cheap protein for braised Chinese pork dish, makes 4 servings"
-    plan = finalize_plan({"basket": [{"id": 1, "quantity": 1, "why": long_why},
-                                     {"id": 2, "quantity": 1, "why": "cheapest greens this week"},
-                                     {"id": 3, "quantity": 1, "why": "one two three four five six seven and nine"}]},
-                         DEALS, PROFILE)
-    assert [i["why"] for i in plan["basket"]] == [
-        "Cheap protein for braised Chinese pork dish, makes",
-        "cheapest greens this week",
-        "one two three four five six seven",        # no dangling "and"
-    ]
+def test_the_model_is_not_asked_for_a_reason_and_one_it_sends_is_dropped():
+    plan = finalize_plan({"basket": [{"id": 1, "quantity": 1, "why": "classic Chinese cut"}]}, DEALS, PROFILE)
+    assert "why" not in plan["basket"][0]
+    assert plan["basket"][0]["source_name"] == "Fresh Pork Shoulder Blade Roast"

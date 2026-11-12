@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan, servings_target, stream_budget_plan
-from ai.candidates import bucket_for, cuisine_note, select_candidates
+from ai.candidates import bucket_for, cuisine_note, expand_listings, select_candidates
 from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
@@ -260,11 +260,15 @@ def _prepare(profile: BudgetProfile, postal_code: str, watch: _Stopwatch) -> dic
     if not deals:
         return None
 
+    # One row per product, so "mushrooms, cucumbers or baby carrots" can't be
+    # bought as one item, then drop dietary clashes and what's already at home.
     filtered, skipped_pantry = watch.time(
-        "filter_ms", _filter_deals, deals, profile.restriction, profile.pantry
+        "filter_ms", lambda: _filter_deals(expand_listings(deals), profile.restriction, profile.pantry)
     )
     # Cut 400+ deals down to a balanced, good-value shortlist for Claude.
-    candidates = watch.time("prefilter_ms", select_candidates, filtered, profile.cuisines)
+    candidates = watch.time(
+        "prefilter_ms", select_candidates, filtered, profile.cuisines, people=profile.people
+    )
     return {
         "candidates": candidates,
         "deals_available": len(filtered),

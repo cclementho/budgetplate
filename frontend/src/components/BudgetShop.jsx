@@ -139,7 +139,6 @@ export default function BudgetShop({ result, budget }) {
                         qty(it.quantity) === "1" ? "" : " each"
                       }`}
                 </p>
-                <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="tnum font-extrabold text-ink">

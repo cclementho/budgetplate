@@ -89,7 +89,7 @@ SHOPPER
 - People to feed: {people}
 - Cuisine preferences: {cuisines}
 - Dietary restriction: {restriction}
-- ALREADY HAS AT HOME (do not buy these; using them is optional): {pantry}
+- ALREADY HAS AT HOME (using them is optional): {pantry}
 - Kitchen appliances (the ONLY ways they can cook): {appliances}
 - Store: {merchant}
 
@@ -113,8 +113,7 @@ Return ONLY valid JSON in exactly this schema:
     {{
       "id": <the deal's ID number from the list>,
       "name": "<short everyday name for it, e.g. 'Chicken thighs'>",
-      "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>,
-      "why": "<8 words or fewer, friendly, e.g. 'cheapest protein this week'>"
+      "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>
     }}
   ],
   "swap_suggestion": <null, OR one sentence on what to swap if the basket had to go over budget>,
@@ -133,30 +132,23 @@ Return ONLY valid JSON in exactly this schema:
 }}
 
 HARD RULES (never break these)
-1. FOOD ONLY. Every item must be something you EAT as a meal or ingredient.
-   No household products, no cleaning supplies, no paper products, no foil,
-   no pet food. Nothing you don't eat.
-2. NO FILLER. Never add snacks, drinks, sweets or extra condiments just to
-   spend more. Spend on food the meals actually need.
-3. Condiments and drinks are ONLY allowed when a specific meal directly needs
-   them (e.g. soy sauce for the stir fry).
-4. Every basket item must be used by at least one meal: its ID must appear in
-   some meal's "uses". If no meal uses it, don't buy it.
-5. NEVER buy anything the shopper ALREADY HAS AT HOME. That list is what is
-   AVAILABLE, not what must be used: use one of those ingredients only when
-   the dish genuinely calls for it (soy sauce in a stir fry, never in a dal),
-   and it is fine to use none of them. List the ones a meal really uses in
-   its "from_home". "from_home" may only contain things from the ALREADY HAS
-   AT HOME list (salt, pepper and water are always fine). Everything else a
-   meal needs must be in the basket.
-6. Only choose deals from the list above, by ID. Do not invent items.
-7. Every meal must be fully cookable with ONLY the shopper's kitchen
+1. NO FILLER. Buy only what the meals need. Every basket item must be used
+   by at least one meal: its ID must appear in some meal's "uses". A
+   condiment is bought only when a specific meal needs it.
+2. Only choose deals from the list above, by ID. One line buys one product.
+3. The ALREADY HAS AT HOME list is what is AVAILABLE, not what must be used:
+   use one of those ingredients only when the dish genuinely calls for it
+   (soy sauce in a stir fry, never in a dal), and it is fine to use none of
+   them. List the ones a meal really uses in its "from_home". "from_home" may
+   only contain things from that list (salt, pepper and water are always
+   fine). Everything else a meal needs must be in the basket.
+4. Every meal must be fully cookable with ONLY the shopper's kitchen
    appliances: {appliances}. No step may need anything else. Microwave only
    means no stovetop and no oven steps at all; no oven means no roasting or
    baking. Shop accordingly: don't buy a roast without an oven, or dried
    beans that need hours of simmering without a stovetop or Instant Pot.
    "appliance" must be exactly one name from the shopper's list.
-8. REAL RECIPES ONLY. Every meal must be a recognizable dish a normal person
+5. REAL RECIPES ONLY. Every meal must be a recognizable dish a normal person
    would cook and could look up by its name, made with the ingredients that
    dish actually needs. The name must match what is in it: no "noodle soup
    with greens" without greens, no curry without curry spices, no "pork
@@ -173,18 +165,9 @@ OTHER RULES
   best-value sensible week.
 - Meals must genuinely fit the shopper's cuisine (a Korean preference gets
   bibimbap or doenjang jjigae, NOT pasta).
-- Be honest about cuisine in "why". Never call an ingredient "Chinese" (or any
-  other cuisine) unless it really is a staple of that cuisine: red onions,
-  potatoes and Indian eggplant are not "classic Chinese" ingredients. If
-  nothing better is on sale, say what it is for instead ("for the stir fry").
 - Respect the dietary restriction strictly (e.g. Halal = no pork or alcohol,
   Gluten-free = avoid wheat/barley, Vegetarian/Vegan = no meat/seafood, Vegan
   also no dairy or eggs).
-- SENSIBLE PACK SIZES. Pick the smallest pack that covers the servings. Do not
-  buy a bulk bag (5 lb of potatoes, a 7 lb bag of onions, a 4 kg bag of rice)
-  for one or two servings; buy one only when several meals use it. When a
-  small and a large pack of the same thing are both on the list, take the
-  small one unless the meals really need more.
 - For "sold by weight" deals, buy a realistic weight for the servings (roughly
   150 to 200 g of meat per serving); the cost is its $/kg price times the kg.
 - The basket total is each item's price times its quantity. Keep it at or
@@ -301,21 +284,6 @@ def _number(value, default=None):
     return number if number == number else default  # NaN -> default
 
 
-# The reason shown under a basket item stays short enough to scan.
-WHY_MAX_WORDS = 8
-
-
-def _cap_words(text, limit: int) -> str:
-    """The text cut to ``limit`` words, without a dangling comma or "and"."""
-    words = str(text or "").split()
-    if len(words) <= limit:
-        return " ".join(words)
-    words = words[:limit]
-    while words and words[-1].strip(",;:").lower() in {"and", "or", "for", "with", "to", "in", "the", "a", ""}:
-        words.pop()
-    return " ".join(words).rstrip(",;:")
-
-
 _VOLUME_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(ml|l)\b", re.IGNORECASE)
 _COUNT_RE = re.compile(r"\b(\d+)\s*(?:pk|pack|ct|count|'s)\b", re.IGNORECASE)
 
@@ -382,10 +350,11 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
             "deal_id": deal_id,
             "name": str(entry.get("name") or deal.get("clean_name") or "").strip(),
             "deal_name": deal.get("clean_name"),
+            # The flyer's own name for the listing this product came from.
+            "source_name": deal.get("source_name") or deal.get("clean_name"),
             "price": round(price, 2),
             "quantity": quantity,
             "size": pack_size(deal),  # what one unit is; None if the flyer doesn't say
-            "why": _cap_words(entry.get("why"), WHY_MAX_WORDS),
             "group": group_for(deal),
             # For by-weight items "price" is per kg and "quantity" is kg;
             # "listed_price" is what the flyer shows (e.g. 2.00 per lb).

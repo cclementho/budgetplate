@@ -24,10 +24,10 @@ PROFILE = {"budget": 120, "people": 1, "cuisines": ["Chinese"], "pantry": ["Rice
 
 REPLY = json.dumps({
     "basket": [
-        {"id": 1, "name": "Pork shoulder", "quantity": 1, "why": "cheap braise {not a brace}"},
-        {"id": 2, "name": "Bok choy", "quantity": 2, "why": 'greens "on sale"'},
-        {"id": 99, "name": "Invented", "quantity": 1, "why": "not on the list"},
-        {"id": 3, "name": "Eggs", "quantity": 1, "why": "breakfast"},
+        {"id": 1, "name": "Pork shoulder", "quantity": 1, "note": "cheap braise {not a brace}"},
+        {"id": 2, "name": "Bok choy", "quantity": 2, "note": 'greens "on sale"'},
+        {"id": 99, "name": "Invented", "quantity": 1},
+        {"id": 3, "name": "Eggs", "quantity": 1},
     ],
     "swap_suggestion": None,
     "meals": [
@@ -75,7 +75,7 @@ def client(monkeypatch):
     """The budget routes on their own app, so the rate limiter isn't involved."""
     monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
     monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
-    monkeypatch.setattr(routes.budget, "select_candidates", lambda deals, cuisines: deals)
+    monkeypatch.setattr(routes.budget, "select_candidates", lambda deals, cuisines, **kw: deals)
     app = FastAPI()
     app.include_router(routes.budget.router, prefix="/api")
     return TestClient(app)
@@ -100,8 +100,8 @@ def test_scanner_returns_each_object_once_it_closes_whatever_the_chunking():
         scanner = _ObjectScanner()
         found = [obj for chunk in chunks(REPLY, size) for obj in scanner.feed(chunk)]
         assert [o.get("id") or o["name"] for o in found] == [1, 2, 99, 3, "Fried eggs on rice", "Red-braised pork"]
-    assert found[0]["why"] == "cheap braise {not a brace}"      # braces and quotes inside strings
-    assert found[1]["why"] == 'greens "on sale"'
+    assert found[0]["note"] == "cheap braise {not a brace}"      # braces and quotes inside strings
+    assert found[1]["note"] == 'greens "on sale"'
 
 
 def test_scanner_ignores_a_half_written_object():
