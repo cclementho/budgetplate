@@ -27,7 +27,7 @@ const amount = (it) => {
 };
 
 // Sections 2-4 of the results page:
-//   2. Your weekly basket (hero) — items, running total, budget verdict, swap
+//   2. Your weekly basket (hero): items, total, budget verdict, swap
 //   3. What you can make — cuisine-matched meals
 //   4. Your shopping list — grouped + copyable
 // Presentational only; receives the /budget-plan response as `result`.
@@ -60,13 +60,6 @@ export default function BudgetShop({ result, budget }) {
       </p>
     );
   }
-
-  // Running total so the shopper sees where each dollar goes.
-  let running = 0;
-  const rows = basket.map((item) => {
-    running += Number(item.subtotal) || 0;
-    return { ...item, running };
-  });
 
   // Group items for the printable list.
   const grouped = GROUP_ORDER.map((group) => ({
@@ -118,7 +111,7 @@ export default function BudgetShop({ result, budget }) {
           animate="show"
           className="mt-4 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface shadow-soft"
         >
-          {rows.map((it, i) => (
+          {basket.map((it, i) => (
             <motion.div
               key={i}
               variants={item}
@@ -140,9 +133,6 @@ export default function BudgetShop({ result, budget }) {
               <div className="shrink-0 text-right">
                 <p className="tnum font-extrabold text-ink">
                   {money(it.subtotal)}
-                </p>
-                <p className="tnum text-xs text-muted">
-                  running {money(it.running)}
                 </p>
               </div>
             </motion.div>

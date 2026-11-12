@@ -108,7 +108,7 @@ def test_prompt_without_breakfast_plans_lunches_and_dinners_only():
     assert "spending up to it is fine" in prompt
     assert "Underspending is a WIN" not in prompt           # the old rule that starved baskets
     assert "NO FILLER" in prompt and "FOOD ONLY" in prompt  # still never pad
-    assert "under 12 words" in prompt
+    assert "8 words or fewer" in prompt
     assert "estimated_total" not in prompt and '"subtotal"' not in prompt  # Python does the maths
 
 
@@ -373,3 +373,16 @@ def test_groups_come_from_python_not_the_model():
     assert '"group"' not in build_budget_prompt(PROFILE, DEALS)
     plan = finalize_plan({"basket": [{"id": 2, "quantity": 1, "group": "Proteins"}]}, DEALS, PROFILE)
     assert plan["basket"][0]["group"] == "Produce"
+
+
+def test_why_line_is_capped_at_eight_words():
+    long_why = "Cheap protein for braised Chinese pork dish, makes 4 servings"
+    plan = finalize_plan({"basket": [{"id": 1, "quantity": 1, "why": long_why},
+                                     {"id": 2, "quantity": 1, "why": "cheapest greens this week"},
+                                     {"id": 3, "quantity": 1, "why": "one two three four five six seven and nine"}]},
+                         DEALS, PROFILE)
+    assert [i["why"] for i in plan["basket"]] == [
+        "Cheap protein for braised Chinese pork dish, makes",
+        "cheapest greens this week",
+        "one two three four five six seven",        # no dangling "and"
+    ]

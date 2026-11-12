@@ -113,7 +113,7 @@ Return ONLY valid JSON in exactly this schema:
       "id": <the deal's ID number from the list>,
       "name": "<short everyday name for it, e.g. 'Chicken thighs'>",
       "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>,
-      "why": "<under 12 words, friendly, e.g. 'cheapest protein this week'>"
+      "why": "<8 words or fewer, friendly, e.g. 'cheapest protein this week'>"
     }}
   ],
   "swap_suggestion": <null, OR one sentence on what to swap if the basket had to go over budget>,
@@ -300,6 +300,21 @@ def _number(value, default=None):
     return number if number == number else default  # NaN -> default
 
 
+# The reason shown under a basket item stays short enough to scan.
+WHY_MAX_WORDS = 8
+
+
+def _cap_words(text, limit: int) -> str:
+    """The text cut to ``limit`` words, without a dangling comma or "and"."""
+    words = str(text or "").split()
+    if len(words) <= limit:
+        return " ".join(words)
+    words = words[:limit]
+    while words and words[-1].strip(",;:").lower() in {"and", "or", "for", "with", "to", "in", "the", "a", ""}:
+        words.pop()
+    return " ".join(words).rstrip(",;:")
+
+
 _COUNT_RE = re.compile(r"\b(\d+)\s*(?:pk|pack|ct|count|'s)\b", re.IGNORECASE)
 
 
@@ -360,7 +375,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             "price": round(price, 2),
             "quantity": quantity,
             "size": pack_size(deal),  # what one unit is; None if the flyer doesn't say
-            "why": str(entry.get("why") or "").strip(),
+            "why": _cap_words(entry.get("why"), WHY_MAX_WORDS),
             "group": group_for(deal),
             # For by-weight items "price" is per kg and "quantity" is kg;
             # "listed_price" is what the flyer shows (e.g. 2.00 per lb).
