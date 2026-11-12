@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ai.budget import generate_budget_plan
-from ai.candidates import cuisine_note, select_candidates
+from ai.candidates import bucket_for, cuisine_note, select_candidates
 from ai.client import ClaudeResponseError, last_call_stats
 from queries import get_items
 from scraper.pipeline import has_fresh_data, run_pipeline
@@ -136,26 +136,58 @@ def _pantry_terms(pantry: list[str]) -> list[list[str]]:
     return terms
 
 
-def _is_pantry_item(name: str, terms: list[list[str]]) -> bool:
-    """True when one alternative in the listing ends with a pantry term.
+def _ends_with_term(words: list[str], terms: list[list[str]]) -> bool:
+    """True when the words name a pantry item: they end with one of the terms."""
+    words = list(words)
+    while words and words[-1] in _FORM_WORDS:
+        words.pop()
+    for term in terms:
+        n = len(term)
+        if len(words) < n or words[-n:] != term:
+            continue
+        before = words[-n - 1] if len(words) > n else None
+        if before in _DIFFERENT_PRODUCT.get(term[-1], set()):
+            continue  # e.g. "peanut butter" when the shopper has butter
+        return True
+    return False
 
-    Flyer names bundle alternatives ("White or Whole Wheat Bread 675 G or
-    Buns"), so each comma- or "or"-separated part is checked on its own.
+
+def _is_pantry_item(name: str, terms: list[list[str]]) -> bool:
+    """True when EVERY alternative in the listing is something already at home.
+
+    Flyer names bundle alternatives ("Aman's Milk or Suji Rusk"), and the
+    shopper may want the other one, so a listing is left out only when each
+    comma- or "or"-separated alternative is a pantry item or isn't food the
+    plan would use anyway. At least one must be a real pantry match.
+
+    "Basmati or Signature Rice" means basmati rice or signature rice: an
+    alternative that is only a description borrows the noun of the one after
+    it. That is not done when the alternative is itself a plural noun
+    ("Carrots or Red Onions") or the next one has no describing word of its
+    own ("Carrots or Onions").
     """
     text = _SIZE_RE.sub(" ", _TRAILER_RE.sub("", name or ""))
-    for part in re.split(r",|\bor\b", text, flags=re.IGNORECASE):
-        words = _name_words(part)
-        while words and words[-1] in _FORM_WORDS:
-            words.pop()
-        for term in terms:
-            n = len(term)
-            if len(words) < n or words[-n:] != term:
-                continue
-            before = words[-n - 1] if len(words) > n else None
-            if before in _DIFFERENT_PRODUCT.get(term[-1], set()):
-                continue  # e.g. "peanut butter" when the shopper has butter
-            return True
-    return False
+    pieces = re.split(r"(,|\bor\b)", text, flags=re.IGNORECASE)
+    parts = []  # (raw text, words, joined to the next part by "or")
+    for i in range(0, len(pieces), 2):
+        words = _name_words(pieces[i])
+        if words:
+            joiner = pieces[i + 1].lower() if i + 1 < len(pieces) else ""
+            parts.append((pieces[i].strip(), words, joiner == "or"))
+
+    matched = False
+    for i, (raw, words, or_next) in enumerate(parts):
+        hit = _ends_with_term(words, terms)
+        if not hit and or_next and i + 1 < len(parts) and not raw.lower().endswith("s"):
+            nxt = parts[i + 1][1]
+            # Only the noun is borrowed, so this works for one-word terms:
+            # "Sandwich Spread or Silver Swan Soy Sauce" is not soy sauce.
+            hit = len(nxt) > 1 and _ends_with_term(words + nxt[-1:], [t for t in terms if len(t) == 1])
+        if hit:
+            matched = True
+        elif bucket_for({"clean_name": raw}) is not None:
+            return False  # a food alternative the shopper doesn't have
+    return matched
 
 
 def _filter_deals(
@@ -170,7 +202,8 @@ def _filter_deals(
 
     Pantry items are removed so Claude can't spend budget on something the
     shopper already owns. Only deals that ARE the pantry item go: having
-    butter at home doesn't hide butter cookies or peanut butter. Returns ``(kept_deals, skipped_names)`` — the skipped
+    butter at home doesn't hide butter cookies or peanut butter. A listing
+    with alternatives ("X or Y") goes only when every alternative is at home. Returns ``(kept_deals, skipped_names)`` — the skipped
     names let the UI confirm what was left out.
     """
     blocked = {"Household"}

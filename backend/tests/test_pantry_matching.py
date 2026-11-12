@@ -57,10 +57,26 @@ def test_only_products_that_are_the_pantry_item_are_left_out(pantry, name, expec
     assert skipped(name, pantry) is expected
 
 
-def test_one_alternative_in_a_bundled_listing_is_enough():
-    assert skipped("Dempster's White or Whole Wheat Bread 675 G or Buns", "Bread")
-    assert skipped("Carrots or Onions 3 Lb Product of Canada, Canada No. 1", "Onions")
-    assert not skipped("Christie Cookies 224-303 G or Triscuit Crackers", "Bread")
+@pytest.mark.parametrize("pantry, name, expected", [
+    # kept: the other alternative is food the shopper doesn't have
+    (["Milk"], "Aman's Milk or Suji Rusk", False),
+    (["Bread"], "Dempster's White or Whole Wheat Bread 675 G or Buns", False),
+    (["Onions"], "Carrots or Onions 3 Lb Product of Canada, Canada No. 1", False),
+    (["Onions"], "Carrots or Red Onions", False),
+    (["Soy sauce"], "Lady's Choice Sandwich Spread 470 Ml or Silver Swan Soy Sauce", False),
+    (["Butter"], "Lactantia Butter Sticks, Kraft Parmesan Shredded Cheese", False),
+    (["Bread"], "Christie Cookies 224-303 G or Triscuit Crackers", False),
+    # skipped: every alternative is at home ("Basmati or Signature Rice" is two rices)
+    (["Rice"], "Chalo! Basmati or Signature Rice", True),
+    (["Sugar"], "Aman's Brown or White Sugar", True),
+    (["Bread"], "Dempster's White or Whole Wheat Bread 675 G", True),
+    (["Rice", "Sugar"], "Jasmine Rice or Brown Sugar", True),
+    (["Onions", "Garlic"], "Onions or Garlic", True),
+    # skipped: the only other alternative isn't food the plan would use
+    (["Butter"], "Sainsbury All Butter or Salted Fudge", True),
+])
+def test_x_or_y_listings_are_left_out_only_when_every_alternative_is_at_home(pantry, name, expected):
+    assert skipped(name, *pantry) is expected
 
 
 def test_matching_ignores_case_and_plurals_both_ways():
