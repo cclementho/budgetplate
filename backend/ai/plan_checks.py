@@ -171,8 +171,8 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
     - a meal "uses" something that isn't in the basket: removed from the meal;
     - a meal takes something "from home" that isn't in the shopper's pantry:
       removed from the meal;
-    - the basket is over budget: items no meal uses are dropped, cheapest
-      first; if it is still over, an item the fewest meals rely on loses one
+    - an item no meal uses: dropped, always;
+    - the basket is over budget: an item the fewest meals rely on loses one
       unit, or is dropped when only one was bought, and so on until it fits.
       Where one removal can settle it, the cheapest such item is chosen
       rather than several smaller ones. An item a meal is named for (the
@@ -201,6 +201,14 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
         if missing:
             meal["from_home"] = [h for h in meal.get("from_home") or [] if h not in missing]
             fixes.append(f"{meal.get('name')!r}: removed {missing}, not in the shopper's pantry")
+
+    # Nothing is bought that no meal uses, whether or not the budget is tight.
+    # (A reply with no meals at all is left alone: there is nothing to judge by.)
+    if meals:
+        used = {_norm(u) for meal in meals for u in meal.get("uses") or []}
+        for line in [line for line in basket if _norm(line.get("name")) not in used]:
+            basket.remove(line)
+            fixes.append(f"dropped {line.get('name')!r} (${float(line.get('subtotal') or 0):.2f}): no meal uses it")
 
     budget = profile.get("budget")
 

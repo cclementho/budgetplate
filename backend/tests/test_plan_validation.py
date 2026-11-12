@@ -51,7 +51,7 @@ def test_a_meal_name_must_match_what_the_meal_uses():
 
 
 def test_validation_drops_ingredients_that_are_neither_bought_nor_at_home():
-    plan = {"basket": [line("Bread", 3), line("Pork", 9)],
+    plan = {"basket": [line("Pork", 9)],
             "meals": [meal("Pork with rice", ["Pork", "Ghost pepper"], ["rice", "turmeric", "salt"])]}
     fixed, report = validate_plan(plan, PROFILE)
     assert fixed["meals"][0]["uses"] == ["Pork"]
@@ -60,13 +60,17 @@ def test_validation_drops_ingredients_that_are_neither_bought_nor_at_home():
     assert plan["meals"][0]["uses"] == ["Pork", "Ghost pepper"]          # the input is not modified
 
 
-def test_over_budget_drops_unused_items_first_cheapest_first():
-    plan = {"basket": [line("Pork", 30), line("Jam", 6), line("Candles", 4), line("Bread", 5)],
+def test_items_no_meal_uses_are_always_dropped():
+    plan = {"basket": [line("Pork", 30), line("Jam", 6), line("Eggs", 4), line("Bread", 5)],
             "meals": [meal("Pork sandwiches", ["Pork", "Bread"])]}
-    fixed, report = validate_plan(plan, {**PROFILE, "budget": 36})        # $45, so $9 over
-    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Bread"]      # both unused items go
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 100})      # $45 of $100: well under budget
+    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Bread"]
     assert fixed["estimated_total"] == 35 and report["problems"] == []
-    assert "Candles" in report["fixes"][0] and "Jam" in report["fixes"][1]
+    assert report["fixes"] == ["dropped 'Jam' ($6.00): no meal uses it", "dropped 'Eggs' ($4.00): no meal uses it"]
+
+    # A reply with a basket and no meals at all isn't emptied.
+    fixed, _ = validate_plan({"basket": [line("Pork", 30)], "meals": []}, PROFILE)
+    assert [l["name"] for l in fixed["basket"]] == ["Pork"]
 
 
 def test_over_budget_then_trims_what_the_fewest_meals_rely_on():
