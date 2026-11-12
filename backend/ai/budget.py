@@ -15,7 +15,7 @@ import json
 import logging
 import re
 
-from ai.candidates import _words, bucket_for
+from ai.candidates import _ORIGIN_RE, _words, bucket_for
 from ai.client import ClaudeResponseError, call_claude_json, last_call_stats, stream_claude_json
 from ai.plan_checks import RENAMEABLE, missing_named_ingredients, validate_plan
 from config import settings
@@ -112,7 +112,6 @@ Return ONLY valid JSON in exactly this schema:
   "basket": [
     {{
       "id": <the deal's ID number from the list>,
-      "name": "<short everyday name for it, e.g. 'Chicken thighs'>",
       "quantity": <how many of this listing to buy, a number. For "sold by weight" deals: the weight to buy in kg, e.g. 1.5>
     }}
   ],
@@ -311,6 +310,15 @@ def pack_size(deal: dict) -> str | None:
     return f"{int(count.group(1))} pack" if count and int(count.group(1)) > 1 else None
 
 
+def display_name(deal: dict) -> str:
+    """The deal's name as shown to the shopper: its clean_name from the flyer
+    data, minus the origin and per-kg text flyers append ("Product of Usa",
+    "4.41/kg", "Selected Varieties")."""
+    name = deal.get("clean_name") or ""
+    short = re.sub(r"\s{2,}", " ", _ORIGIN_RE.sub(" ", name)).strip(" ,-")
+    return short or name.strip()
+
+
 def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) -> dict:
     """Turn the model's choices into the plan the API returns.
 
@@ -349,7 +357,10 @@ def finalize_plan(raw, deals: list[dict], profile: dict, quiet: bool = False) ->
             continue
         lines[deal_id] = {
             "deal_id": deal_id,
-            "name": str(entry.get("name") or deal.get("clean_name") or "").strip(),
+            # Always the flyer's name for the deal with this ID. Whatever the
+            # model calls it is ignored, so a comment or a wrong product
+            # can't end up on the shopping list.
+            "name": display_name(deal),
             "deal_name": deal.get("clean_name"),
             # The flyer's own name for the listing this product came from.
             "source_name": deal.get("source_name") or deal.get("clean_name"),

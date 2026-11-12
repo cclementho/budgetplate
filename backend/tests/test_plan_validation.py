@@ -177,12 +177,12 @@ def test_a_misnamed_meal_gets_a_small_rename_call_not_a_full_retry(claude, caplo
     rename = claude.requests[1]
     text = rename["messages"][0]["content"]
     assert len(rename["messages"]) == 1 and rename["max_tokens"] == 400       # small and on its own
-    assert '1. "Scrambled Eggs & Toast" is made from: Bread.' in text and "mentions egg" in text
+    assert '1. "Scrambled Eggs & Toast" is made from: Villaggio Bread.' in text and "mentions egg" in text
     assert '"Toast" is made from' not in text                                  # only the flagged meal
-    assert "DEALS ON SALE" not in text and "Villaggio" not in text             # not the plan or the flyer
+    assert "DEALS ON SALE" not in text and "Fresh Pork Shoulder" not in text            # not the plan or the flyer
 
     assert [m["name"] for m in plan["meals"]] == ["Plain toast", "Toast"]
-    assert [l["name"] for l in plan["basket"]] == ["Bread"]                    # the basket is untouched
+    assert [l["name"] for l in plan["basket"]] == ["Villaggio Bread"]          # the basket is untouched
     assert (stats["calls"], stats["retried"], stats["renames"]) == (2, False, 1)
     assert (stats["problems_first"], stats["problems"]) == (1, 0)
     assert (stats["input_tokens"], stats["output_tokens"]) == (4150, 1030)     # both calls counted
@@ -215,7 +215,7 @@ def test_a_problem_python_cannot_fix_triggers_one_full_retry(claude, caplog):
     assert 'the breakfast "Onion jam on toast" contains onion' in note
     assert "named for" not in note                                              # name problems aren't sent here
 
-    assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"]            # the corrected plan
+    assert [l["name"] for l in plan["basket"]] == ["Villaggio Bread", "Large White Eggs"]            # the corrected plan
     assert (stats["calls"], stats["retried"], stats["renames"], stats["problems"]) == (2, True, 0, 0)
     assert "retried=True renames=0" in caplog.text and "renamed plans in" in caplog.text
 
@@ -233,7 +233,7 @@ def test_a_retry_that_fails_keeps_the_first_plan(claude):
     claude.replies = [reply(ONION_BREAKFAST), reply(GOOD, stop_reason="max_tokens"), names()]
     stats = {}
     plan = generate_budget_plan(BREAKFAST, DEALS, stats=stats)
-    assert [l["name"] for l in plan["basket"]] == ["Bread", "Jam"]
+    assert [l["name"] for l in plan["basket"]] == ["Villaggio Bread", "Strawberry Jam"]
     assert stats["retried"] is False and stats["problems"] == 2                 # onion at breakfast, and its name
 
 
@@ -243,7 +243,7 @@ def test_the_stream_announces_a_full_retry_but_not_a_rename(claude):
     assert [kind for kind, _ in events] == ["item", "item", "meal", "meal", "retry", "plan"]
     assert "contains onion" in events[4][1]["problems"][0]
     plan, stats = events[-1][1]
-    assert [l["name"] for l in plan["basket"]] == ["Bread", "Eggs"] and stats["retried"] is True
+    assert [l["name"] for l in plan["basket"]] == ["Villaggio Bread", "Large White Eggs"] and stats["retried"] is True
     assert "stream" not in claude.requests[1]                                   # the correction is a plain call
 
     claude.replies = [reply(MISNAMED), names((1, "Plain toast"))]

@@ -142,13 +142,13 @@ def test_prices_and_subtotals_come_from_the_flyer_not_the_model():
     plan = finalize_plan(raw, DEALS, PROFILE)
 
     pork, bok = plan["basket"]
-    assert (pork["name"], pork["price"], pork["quantity"], pork["subtotal"]) == ("Pork shoulder", 8.80, 2, 17.60)
+    assert (pork["name"], pork["price"], pork["quantity"], pork["subtotal"]) == ("Fresh Pork Shoulder Blade Roast", 8.80, 2, 17.60)
     assert (bok["price"], bok["subtotal"], bok["group"]) == (1.99, 5.97, "Produce")
     assert pork["group"] == "Proteins" and pork["deal_name"] == "Fresh Pork Shoulder Blade Roast"
     assert plan["estimated_total"] == 23.57
     assert plan["servings_total"] == 14 and plan["servings_target"] == 21
     assert finalize_plan(raw, DEALS, {**PROFILE, "include_breakfast": False})["servings_target"] == 14
-    assert plan["meals"][1]["uses"] == ["Pork shoulder", "Bok choy"]   # IDs become readable names
+    assert plan["meals"][1]["uses"] == ["Fresh Pork Shoulder Blade Roast", "Bok Choy"]   # IDs become readable names
     assert plan["meals"][0]["from_home"] == ["Rice", "Soy sauce"]
 
 
@@ -162,8 +162,8 @@ def test_invented_or_broken_basket_lines_are_dropped_and_duplicates_merged(caplo
     ], "meals": [{"name": "Greens", "servings": "4", "uses": [2, 99]}]}
     with caplog.at_level(logging.WARNING, logger="budgetplate.budget"):
         plan = finalize_plan(raw, DEALS, PROFILE)
-    assert [(i["name"], i["quantity"], i["subtotal"]) for i in plan["basket"]] == [("Bok choy", 3, 5.97)]
-    assert plan["meals"][0] == {"name": "Greens", "meal": "main", "servings": 4, "uses": ["Bok choy"], "from_home": [],
+    assert [(i["name"], i["quantity"], i["subtotal"]) for i in plan["basket"]] == [("Bok Choy", 3, 5.97)]
+    assert plan["meals"][0] == {"name": "Greens", "meal": "main", "servings": 4, "uses": ["Bok Choy"], "from_home": [],
                                 "appliance": None, "prep_time": "", "instructions": ""}
     assert "dropped 3 basket line(s)" in caplog.text
 
@@ -173,7 +173,7 @@ def test_items_no_meal_uses_are_reported_in_the_log(caplog):
            "meals": [{"name": "Greens", "servings": 2, "uses": [2]}]}
     with caplog.at_level(logging.WARNING, logger="budgetplate.budget"):
         finalize_plan(raw, DEALS, PROFILE)
-    assert "1 bought item(s) not used by any meal: ['Tofu']" in caplog.text
+    assert "1 bought item(s) not used by any meal: ['Sunrise Tofu']" in caplog.text
 
 
 def test_garbage_from_the_model_becomes_an_empty_plan():
@@ -410,3 +410,29 @@ def test_a_reply_with_two_answers_becomes_a_plan_not_a_502(claude):
     claude.response = fake_response(text=f"{first}\n\nWait, I need to recalculate.\n\n{second}")
     plan = generate_budget_plan(PROFILE, DEALS)
     assert plan["basket"][0]["quantity"] == 1 and plan["meals"][0]["name"] == "Greens"
+
+
+def test_basket_names_come_from_the_deal_never_from_the_model():
+    from ai.budget import display_name
+
+    deals = DEALS + [
+        {"clean_name": "Gray Ridge Premium Large Eggs 18 Pk", "price": 5.47, "price_per_kg": None,
+         "category": "Dairy & Eggs"},
+        {"clean_name": "Indian Eggplant Product of Usa or Mexico 3.28/kg - Freshco Diwali", "price": 1.49,
+         "price_per_kg": 3.28, "category": "Produce", "priced_per": "lb"},
+    ]
+    raw = {"basket": [{"id": len(DEALS) + 1, "name": "Eggs (best estimate: using bread for breakfast)", "quantity": 1},
+                      {"id": len(DEALS) + 2, "name": "Chinese eggplant", "quantity": 0.5},
+                      {"id": 2, "quantity": 1}],
+           "meals": [{"name": "Egg and eggplant stir fry", "servings": 4, "uses": [len(DEALS) + 1, len(DEALS) + 2, 2]}]}
+    plan = finalize_plan(raw, deals, PROFILE)
+
+    assert [i["name"] for i in plan["basket"]] == ["Gray Ridge Premium Large Eggs 18 Pk", "Indian Eggplant", "Bok Choy"]
+    assert plan["meals"][0]["uses"] == ["Gray Ridge Premium Large Eggs 18 Pk", "Indian Eggplant", "Bok Choy"]
+    assert "best estimate" not in str(plan) and "Chinese eggplant" not in str(plan)
+    assert '"name": "<short everyday name' not in build_budget_prompt(PROFILE, deals)   # no longer asked for
+
+    # The display name is the clean_name minus the origin and per-kg text flyers append.
+    assert display_name({"clean_name": "Pork Picnic Roast Bone-in, Fresh, Cryovac 4.41/kg"}) == "Pork Picnic Roast Bone-in, Fresh, Cryovac"
+    assert display_name({"clean_name": "Bananas Product of Ecuador"}) == "Bananas"
+    assert display_name({"clean_name": "Bok Choy"}) == "Bok Choy"
