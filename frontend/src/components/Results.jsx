@@ -77,6 +77,7 @@ export default function Results({ profile, onBack }) {
             restriction: profile.restriction,
             pantry: profile.pantry,
             appliances: profile.appliances,
+            include_breakfast: profile.includeBreakfast !== false,
           }),
           api.getDeals(profile.postal, top.merchant),
         ]);

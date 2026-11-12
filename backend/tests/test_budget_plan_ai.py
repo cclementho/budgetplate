@@ -18,7 +18,7 @@ from config import settings
 
 PLAN_JSON = '{"basket": [], "swap_suggestion": null, "meals": []}'
 EMPTY_PLAN = {"basket": [], "meals": [], "estimated_total": 0, "servings_total": 0,
-              "servings_target": 14, "swap_suggestion": None}
+              "servings_target": 21, "include_breakfast": True, "swap_suggestion": None}
 
 DEALS = [
     {"clean_name": "Fresh Pork Shoulder Blade Roast", "price": 8.80, "price_per_kg": 8.80, "category": "Meat & Seafood"},
@@ -89,10 +89,22 @@ def test_thinking_blocks_before_the_answer_are_ignored(claude):
 
 # --- the prompt ---------------------------------------------------------------
 
-def test_prompt_asks_for_a_full_week_of_lunches_and_dinners():
+def test_prompt_asks_for_a_full_week_with_breakfast_by_default():
     prompt = build_budget_prompt({**PROFILE, "people": 2}, DEALS)
-    assert "about 28 servings in total" in prompt          # 14 per person x 2 people
+    assert "Plan ONE week of breakfasts, lunches and dinners" in prompt
+    assert "21 servings per person, so about 42 servings in total" in prompt
+    assert "7 of each person's servings are breakfasts (14 in total)" in prompt
+    assert "eggs, oats, toast, congee" in prompt           # breakfasts can be simple
+    assert "1 or 2 breakfasts and 5 or 6 lunch/dinner meals" in prompt
+    assert '"meal": "<"breakfast" or "main">"' in prompt
+
+
+def test_prompt_without_breakfast_plans_lunches_and_dinners_only():
+    prompt = build_budget_prompt({**PROFILE, "people": 2, "include_breakfast": False}, DEALS)
+    assert "Plan ONE week of lunches and dinners" in prompt
+    assert "14 servings per person, so about 28 servings in total" in prompt
     assert "5 to 7 different meals" in prompt
+    assert "breakfast" not in prompt.lower()
     assert "spending up to it is fine" in prompt
     assert "Underspending is a WIN" not in prompt           # the old rule that starved baskets
     assert "NO FILLER" in prompt and "FOOD ONLY" in prompt  # still never pad
@@ -132,7 +144,8 @@ def test_prices_and_subtotals_come_from_the_flyer_not_the_model():
     assert (bok["price"], bok["subtotal"], bok["group"]) == (1.99, 5.97, "Produce")
     assert pork["group"] == "Proteins" and pork["deal_name"] == "Fresh Pork Shoulder Blade Roast"
     assert plan["estimated_total"] == 23.57
-    assert plan["servings_total"] == 14 and plan["servings_target"] == 14
+    assert plan["servings_total"] == 14 and plan["servings_target"] == 21
+    assert finalize_plan(raw, DEALS, {**PROFILE, "include_breakfast": False})["servings_target"] == 14
     assert plan["meals"][1]["uses"] == ["Pork shoulder", "Bok choy"]   # IDs become readable names
     assert plan["meals"][0]["from_home"] == ["Rice", "Soy sauce"]
 
@@ -148,7 +161,7 @@ def test_invented_or_broken_basket_lines_are_dropped_and_duplicates_merged(caplo
     with caplog.at_level(logging.WARNING, logger="budgetplate.budget"):
         plan = finalize_plan(raw, DEALS, PROFILE)
     assert [(i["name"], i["quantity"], i["subtotal"]) for i in plan["basket"]] == [("Bok choy", 3, 5.97)]
-    assert plan["meals"][0] == {"name": "Greens", "servings": 4, "uses": ["Bok choy"], "from_home": [],
+    assert plan["meals"][0] == {"name": "Greens", "meal": "main", "servings": 4, "uses": ["Bok choy"], "from_home": [],
                                 "appliance": None, "prep_time": "", "instructions": ""}
     assert "dropped 3 basket line(s)" in caplog.text
 
@@ -162,7 +175,7 @@ def test_items_no_meal_uses_are_reported_in_the_log(caplog):
 
 
 def test_garbage_from_the_model_becomes_an_empty_plan():
-    assert finalize_plan(["not", "a", "plan"], DEALS, {"people": 3})["servings_target"] == 42
+    assert finalize_plan(["not", "a", "plan"], DEALS, {"people": 3})["servings_target"] == 63
     assert finalize_plan({"basket": "nope", "meals": None}, DEALS, PROFILE)["basket"] == []
 
 
@@ -275,3 +288,26 @@ def test_route_accepts_only_known_appliances_and_needs_at_least_one(claude, monk
     assert "the ONLY ways they can cook): Air fryer" in claude.requests[-1]["messages"][0]["content"]
     assert client.post("/api/budget-plan", json=base).status_code == 200   # default applies
     assert "the ONLY ways they can cook): Stovetop, Oven" in claude.requests[-1]["messages"][0]["content"]
+
+
+def test_breakfasts_are_labelled_and_the_route_takes_the_toggle(claude, monkeypatch):
+    import json
+
+    import main
+
+    raw = {"basket": [{"id": 2, "name": "Bok choy", "quantity": 1}],
+           "meals": [{"name": "Congee", "meal": "Breakfast", "servings": 7, "uses": [2]},
+                     {"name": "Stir fry", "meal": "main", "servings": 14, "uses": [2]}]}
+    assert [m["meal"] for m in finalize_plan(raw, DEALS, PROFILE)["meals"]] == ["breakfast", "main"]
+    off = finalize_plan(raw, DEALS, {**PROFILE, "include_breakfast": False})
+    assert [m["meal"] for m in off["meals"]] == ["main", "main"] and off["include_breakfast"] is False
+
+    monkeypatch.setattr(routes.budget, "has_fresh_data", lambda pc: True)
+    monkeypatch.setattr(routes.budget, "get_items", lambda pc, merchant=None: [dict(d) for d in DEALS])
+    claude.response = fake_response(text=json.dumps(raw))
+    client = TestClient(main.app)
+    base = {"postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 60}
+    assert client.post("/api/budget-plan", json=base).json()["plan"]["servings_target"] == 21   # on by default
+    body = client.post("/api/budget-plan", json={**base, "include_breakfast": False}).json()
+    assert body["plan"]["servings_target"] == 14
+    assert "lunches and dinners for this shopper" in claude.requests[-1]["messages"][0]["content"]

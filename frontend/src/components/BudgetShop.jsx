@@ -39,7 +39,8 @@ export default function BudgetShop({ result, budget }) {
   const total = result?.estimated_total ?? plan?.estimated_total;
   const underBudget = result?.under_budget;
   const swap = plan?.swap_suggestion;
-  // Lunch and dinner for a week is 14 servings per person.
+  // 14 servings per person a week (lunch, dinner), 21 with breakfast.
+  const withBreakfast = plan?.include_breakfast === true;
   const servingsTotal = plan?.servings_total;
   const servingsTarget = plan?.servings_target;
   // Deals left out because the shopper said they already have them.
@@ -214,7 +215,8 @@ export default function BudgetShop({ result, budget }) {
             <p className="mt-1 text-sm text-muted">
               About <span className="tnum font-semibold text-ink">{servingsTotal}</span>{" "}
               servings, planned for{" "}
-              <span className="tnum">{servingsTarget}</span> (lunch and dinner
+              <span className="tnum">{servingsTarget}</span> (
+              {withBreakfast ? "breakfast, lunch and dinner" : "lunch and dinner"}{" "}
               for 7 days).
             </p>
           )}
@@ -234,6 +236,7 @@ export default function BudgetShop({ result, budget }) {
                   <h3 className="font-extrabold text-ink">{m.name}</h3>
                   <span className="tnum shrink-0 rounded-full bg-brand-tint px-2.5 py-1 text-xs font-bold text-brand-deep">
                     {[
+                      m.meal === "breakfast" && "Breakfast",
                       m.servings > 0 &&
                         `${m.servings} ${m.servings === 1 ? "serving" : "servings"}`,
                       m.appliance,

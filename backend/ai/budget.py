@@ -2,8 +2,8 @@
 
 Given a shortlist of the deals on sale at the shopper's store this week plus
 their preferences (budget, household size, cuisines, dietary restriction, what
-is already at home), Haiku plans lunch and dinner for seven days and the basket
-that makes them.
+is already at home), Haiku plans a week of meals (lunch and dinner, plus
+breakfast unless the shopper turns it off) and the basket that makes them.
 
 The model only chooses: which deals (by ID), how many, and which meals. Names
 aside, everything that involves money is done here in Python from the flyer
@@ -33,8 +33,9 @@ _BUCKET_GROUP = {
 APPLIANCES = ["Stovetop", "Oven", "Microwave", "Air fryer", "Rice cooker", "Instant Pot"]
 DEFAULT_APPLIANCES = ["Stovetop", "Oven"]
 
-# Lunch and dinner for seven days.
+# Lunch and dinner for seven days, plus seven breakfasts when they're wanted.
 SERVINGS_PER_PERSON = 14
+BREAKFASTS_PER_PERSON = 7
 
 SYSTEM_PROMPT = (
     "You are a friendly, practical grocery-budgeting assistant for Canadian "
@@ -45,7 +46,7 @@ SYSTEM_PROMPT = (
     "requested."
 )
 
-PROMPT_TEMPLATE = """Plan ONE week of lunches and dinners for this shopper, and the grocery basket that makes them.
+PROMPT_TEMPLATE = """Plan ONE week of {meals_phrase} for this shopper, and the grocery basket that makes them.
 
 SHOPPER
 - Weekly budget: ${budget:.2f} (never go over it; spending up to it is fine)
@@ -57,11 +58,11 @@ SHOPPER
 - Store: {merchant}
 
 THE GOAL
-- Cover lunch AND dinner for 7 days: 14 servings per person, so about {servings_target} servings in total.
-- Give 5 to 7 different meals. Each meal has "servings": how many portions it makes with what you bought for it.
+- Cover {cover_phrase} for 7 days: {per_person} servings per person, so about {servings_target} servings in total.
+- Give {meal_count}. Each meal has "servings": how many portions it makes with what you bought for it.
   The servings of all meals must add up to roughly {servings_target}. Cooking a big batch and eating it again for
   lunch is expected, so one meal can count for 2 to 4 servings per person.
-- Use the budget to make the week better and more filling: enough protein, vegetables and a carb in every meal,
+{breakfast_goal}- Use the budget to make the week better and more filling: enough protein, vegetables and a carb in every meal,
   and some variety. A basket that only feeds the shopper for two days is a failure, even if it is cheap.
 - Buy quantities that really make the servings. One bell pepper cannot stretch across two dishes for a week;
   if a meal makes 4 servings, buy enough protein and vegetables for 4 portions.
@@ -84,6 +85,7 @@ Return ONLY valid JSON in exactly this schema:
   "meals": [
     {{
       "name": "<meal name>",
+      "meal": "<{meal_kinds}>",
       "servings": <portions this makes, a whole number>,
       "uses": [<IDs of the basket items this meal uses>],
       "from_home": ["<ingredient the shopper already has, if used>"],
@@ -145,12 +147,25 @@ def _fmt(value) -> str:
 MAX_TOKENS = settings.CLAUDE_MAX_TOKENS
 
 
-def servings_target(people) -> int:
-    """Lunch and dinner for a week for this many people."""
+def _wants_breakfast(profile: dict) -> bool:
+    """Breakfast is planned unless the shopper turned it off."""
+    return profile.get("include_breakfast", True) is not False
+
+
+def servings_target(people, include_breakfast: bool = True) -> int:
+    """Servings for a week for this many people: 14 each, 21 with breakfast."""
+    per_person = SERVINGS_PER_PERSON + (BREAKFASTS_PER_PERSON if include_breakfast else 0)
     try:
-        return SERVINGS_PER_PERSON * max(int(people), 1)
+        return per_person * max(int(people), 1)
     except (TypeError, ValueError):
-        return SERVINGS_PER_PERSON
+        return per_person
+
+
+_BREAKFAST_GOAL = """- Breakfast: 7 of each person's servings are breakfasts ({breakfast_servings} in total). Keep them simple and
+  cheap, the kind of thing people really eat on a weekday: eggs, oats, toast, congee, yogurt and fruit. One or
+  two breakfasts repeated through the week is normal. Set "meal" to "breakfast" for these and "main" for
+  lunches and dinners.
+"""
 
 
 def _appliances(profile: dict) -> list[str]:
@@ -194,11 +209,25 @@ def build_budget_prompt(profile: dict, deals: list[dict]) -> str:
     restriction = profile.get("restriction") or "No restriction"
     pantry = profile.get("pantry") or []
     pantry_text = ", ".join(pantry) if pantry else "Nothing. Assume an empty kitchen"
+    breakfast = _wants_breakfast(profile)
+    people = profile.get("people", 1)
 
     return PROMPT_TEMPLATE.format(
         budget=float(profile.get("budget", 60)),
-        people=profile.get("people", 1),
-        servings_target=servings_target(profile.get("people", 1)),
+        people=people,
+        servings_target=servings_target(people, breakfast),
+        per_person=servings_target(1, breakfast),
+        meals_phrase="breakfasts, lunches and dinners" if breakfast else "lunches and dinners",
+        cover_phrase="breakfast, lunch AND dinner" if breakfast else "lunch AND dinner",
+        meal_count=(
+            "6 to 8 different meals: 1 or 2 breakfasts and 5 or 6 lunch/dinner meals"
+            if breakfast else "5 to 7 different meals"
+        ),
+        breakfast_goal=(
+            _BREAKFAST_GOAL.format(breakfast_servings=servings_target(people, True) - servings_target(people, False))
+            if breakfast else ""
+        ),
+        meal_kinds='"breakfast" or "main"' if breakfast else 'always "main"',
         cuisines=cuisines_text,
         restriction=restriction,
         pantry=pantry_text,
@@ -224,7 +253,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
     are dropped, since they can't be priced or bought.
 
     Returns ``{"basket", "meals", "estimated_total", "servings_total",
-    "servings_target", "swap_suggestion"}``.
+    "servings_target", "include_breakfast", "swap_suggestion"}``.
     """
     raw = raw if isinstance(raw, dict) else {}
     lines: dict[int, dict] = {}
@@ -271,6 +300,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
         line["subtotal"] = round(line["price"] * line["quantity"], 2)
         basket.append(line)
 
+    breakfast = _wants_breakfast(profile)
     allowed = {a.lower(): a for a in _appliances(profile)}
     off_list: list[str] = []
     meals = []
@@ -292,6 +322,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             off_list.append(f"{entry.get('name')}: {said}")
         meals.append({
             "name": str(entry.get("name") or "").strip(),
+            "meal": "breakfast" if breakfast and str(entry.get("meal") or "").strip().lower() == "breakfast" else "main",
             "servings": max(int(round(servings)), 0),
             "uses": uses,
             "from_home": from_home,
@@ -316,7 +347,8 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
         "meals": meals,
         "estimated_total": round(sum(line["subtotal"] for line in basket), 2),
         "servings_total": sum(meal["servings"] for meal in meals),
-        "servings_target": servings_target(profile.get("people", 1)),
+        "servings_target": servings_target(profile.get("people", 1), breakfast),
+        "include_breakfast": breakfast,
         "swap_suggestion": swap.strip() if isinstance(swap, str) and swap.strip() else None,
     }
 

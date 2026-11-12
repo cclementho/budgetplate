@@ -67,6 +67,7 @@ export default function Home({ onFindDeals }) {
   const [pantry, setPantry] = useState([]);
   const [pantryExtra, setPantryExtra] = useState("");
   const [appliances, setAppliances] = useState(["Stovetop", "Oven"]);
+  const [includeBreakfast, setIncludeBreakfast] = useState(true);
   const [error, setError] = useState("");
 
   function toggleCuisine(c) {
@@ -121,6 +122,7 @@ export default function Home({ onFindDeals }) {
       pantry: collectPantry(),
       // Sent in the fixed order above, whatever order they were tapped in.
       appliances: APPLIANCES.filter((a) => appliances.includes(a)),
+      includeBreakfast,
     });
   }
 
@@ -353,6 +355,31 @@ export default function Home({ onFindDeals }) {
             })}
           </div>
         </div>
+
+        {/* 8. Breakfast: on means 21 servings a week each instead of 14 */}
+        <label className="flex cursor-pointer items-center justify-between gap-4">
+          <span>
+            <span className="block text-sm font-bold text-ink">
+              Include breakfast
+            </span>
+            <span className="block text-xs text-muted">
+              {includeBreakfast
+                ? "Planning breakfast, lunch and dinner: 21 servings each a week."
+                : "Planning lunch and dinner only: 14 servings each a week."}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={includeBreakfast}
+            onChange={(e) => setIncludeBreakfast(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden="true"
+            className="relative h-6 w-11 shrink-0 rounded-full bg-line transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2"
+          />
+        </label>
 
         {error && (
           <motion.p

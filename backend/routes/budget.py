@@ -56,6 +56,8 @@ class BudgetProfile(BaseModel):
     appliances: list[
         Literal["Stovetop", "Oven", "Microwave", "Air fryer", "Rice cooker", "Instant Pot"]
     ] = Field(default_factory=lambda: ["Stovetop", "Oven"], min_length=1)
+    # Plan breakfast too (21 servings per person a week instead of 14).
+    include_breakfast: bool = True
 
 
 # Coarse category filters we can apply deterministically before calling Claude.
@@ -245,6 +247,7 @@ def budget_plan(profile: BudgetProfile) -> dict:
                     "restriction": profile.restriction,
                     "pantry": profile.pantry,
                     "appliances": profile.appliances,
+                    "include_breakfast": profile.include_breakfast,
                     "merchant": profile.merchant,
                 },
                 candidates,
