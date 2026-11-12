@@ -65,6 +65,9 @@ NAME_INGREDIENTS = [(label, re.compile(said, re.I), re.compile(has, re.I)) for l
 
 
 # Things every kitchen has; a meal may use them without the shopper listing them.
+# Problems a new name settles; anything else needs the plan itself changed.
+RENAMEABLE = {"name_promises_missing_ingredient"}
+
 ALWAYS_AT_HOME = re.compile(r"^\s*(?:salt|pepper|black pepper|water|salt and pepper|salt & pepper)\s*$", re.I)
 
 
@@ -172,12 +175,14 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
       first; if it is still over, an item the fewest meals rely on loses one
       unit, or is dropped when only one was bought, and so on until it fits.
       Where one removal can settle it, the cheapest such item is chosen
-      rather than several smaller ones.
+      rather than several smaller ones. An item a meal is named for (the
+      chicken in "Chicken soup") is never removed.
 
     Not fixable here (listed in ``problems``, each naming its meal):
     - a meal's name promises an ingredient the meal doesn't use;
     - a breakfast contains potatoes or onion;
     - a meal is left with nothing to cook.
+    - the basket is still over budget because everything left is named in a meal.
 
     Returns ``(plan, {"fixes": [...], "problems": [...]})``; the input is not
     modified. Totals are recomputed from what is left.
@@ -198,23 +203,41 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
             fixes.append(f"{meal.get('name')!r}: removed {missing}, not in the shopper's pantry")
 
     budget = profile.get("budget")
+
+    def uses_of(line) -> list[dict]:
+        key = _norm(line.get("name"))
+        return [meal for meal in meals if key in {_norm(u) for u in meal.get("uses") or []}]
+
+    def named_in_a_meal(line) -> bool:
+        """True when taking this item away would leave a meal's name promising
+        something the meal no longer has ("Chicken soup" without the chicken)."""
+        key = _norm(line.get("name"))
+        for meal in uses_of(line):
+            without = {**meal, "uses": [u for u in meal.get("uses") or [] if _norm(u) != key]}
+            if set(missing_named_ingredients(without, basket)) - set(missing_named_ingredients(meal, basket)):
+                return True
+        return False
+
+    def can_buy_fewer(line) -> bool:
+        return not line.get("sold_by_weight") and float(line.get("quantity") or 1) >= 2
+
     while budget is not None and basket and basket_total(basket) > float(budget) + 0.005:
-        relied_on = {
-            _norm(line.get("name")): sum(
-                1 for meal in meals if _norm(line.get("name")) in {_norm(u) for u in meal.get("uses") or []})
-            for line in basket
-        }
         over = basket_total(basket) - float(budget)
-        fewest = min(relied_on.values())
-        tier = [line for line in basket if relied_on[_norm(line.get("name"))] == fewest]
+        relied_on = {id(line): len(uses_of(line)) for line in basket}
+        # An item a meal is named for is never removed (one fewer is fine).
+        allowed = [line for line in basket
+                   if not relied_on[id(line)] or can_buy_fewer(line) or not named_in_a_meal(line)]
+        if not allowed:
+            break  # reported below as a problem instead
+        fewest = min(relied_on[id(line)] for line in allowed)
+        tier = [line for line in allowed if relied_on[id(line)] == fewest]
         # Among the items the fewest meals rely on, take the cheapest one whose
         # removal settles it in one go; dropping several small items would
         # damage more meals than dropping one. Otherwise the cheapest.
         enough = [line for line in tier if float(line.get("subtotal") or 0) >= over - 0.005]
         pool = enough if (fewest and enough) else tier
         victim = min(pool, key=lambda line: float(line.get("subtotal") or 0))
-        if relied_on[_norm(victim.get("name"))] and not victim.get("sold_by_weight") \
-                and float(victim.get("quantity") or 1) >= 2:
+        if relied_on[id(victim)] and can_buy_fewer(victim):
             # A meal needs it: buy one fewer rather than none.
             victim["quantity"] = round(float(victim["quantity"]) - 1, 2)
             victim["subtotal"] = round(float(victim.get("price") or 0) * victim["quantity"], 2)
@@ -226,9 +249,13 @@ def validate_plan(plan: dict, profile: dict) -> tuple[dict, dict]:
             meal["uses"] = [u for u in meal.get("uses") or [] if _norm(u) != gone]
         fixes.append(
             f"over budget: dropped {victim.get('name')!r} (${float(victim.get('subtotal') or 0):.2f}, "
-            f"used by {relied_on[gone]} meal(s))")
+            f"used by {relied_on[id(victim)]} meal(s))")
 
     problems: list[dict] = []
+    if budget is not None and basket_total(basket) > float(budget) + 0.005:
+        problems.append({"meal": None, "type": "over_budget",
+                         "detail": f"the basket costs ${basket_total(basket):.2f}, over the ${float(budget):.2f} "
+                                   "budget, and every item left is one a meal is named for"})
     for meal in meals:
         name = meal.get("name") or "A meal"
         for label in missing_named_ingredients(meal, basket):

@@ -77,9 +77,11 @@ def test_over_budget_then_trims_what_the_fewest_meals_rely_on():
     assert (eggs["quantity"], eggs["subtotal"]) == (1, 4.0)               # one fewer, not none
     assert fixed["estimated_total"] == 39
 
-    fixed, report = validate_plan(plan, {**PROFILE, "budget": 34})        # needs more than that
-    assert [l["name"] for l in fixed["basket"]] == ["Pork"]               # eggs and bread dropped
-    assert fixed["meals"][0]["uses"] == ["Pork"] and fixed["estimated_total"] == 30
+    # Needing more than that would mean removing the bread or eggs the meals
+    # are named for, so the basket is left alone and reported instead.
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 34})
+    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Eggs", "Bread"] and fixed["estimated_total"] == 39
+    assert [p["type"] for p in report["problems"]] == ["over_budget"]
 
 
 def test_a_name_that_promises_a_missing_ingredient_is_a_problem_not_a_fix():
@@ -220,8 +222,30 @@ def test_breakfasts_with_potato_or_onion_are_flagged():
 
 def test_one_drop_that_settles_the_budget_beats_several_small_ones():
     plan = {"basket": [line("Pork", 30), line("Grapes", 1.5), line("Yams", 1), line("Chicken", 4), line("Beef", 9)],
-            "meals": [meal("Pork roast", ["Pork"]), meal("Fruit bowl with grapes", ["Grapes"]),
-                      meal("Baked yams", ["Yams"]), meal("Chicken soup", ["Chicken"]), meal("Beef stew", ["Beef"])]}
+            "meals": [meal("Sunday roast", ["Pork"]), meal("Fruit bowl", ["Grapes"]),
+                      meal("Baked side", ["Yams"]), meal("Soup", ["Chicken"]), meal("Stew", ["Beef"])]}
     fixed, report = validate_plan(plan, {**PROFILE, "budget": 42.5})     # $45.50, so $3 over
     assert [l["name"] for l in fixed["basket"]] == ["Pork", "Grapes", "Yams", "Beef"]   # only the $4 chicken goes
     assert len(report["fixes"]) == 1
+
+
+def test_an_item_a_meal_is_named_for_is_never_removed():
+    plan = {"basket": [line("Pork", 30), line("Chicken", 4), line("Carrots", 5), line("Beef", 9)],
+            "meals": [meal("Pork roast", ["Pork"]), meal("Chicken soup", ["Chicken", "Carrots"]),
+                      meal("Beef stew", ["Beef"])]}
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 45})        # $48, so $3 over
+    # The $4 chicken would settle it, but "Chicken soup" is named for it: the carrots go instead.
+    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Chicken", "Beef"]
+    assert fixed["meals"][1]["uses"] == ["Chicken"] and report["problems"] == []
+
+
+def test_when_only_named_items_are_left_over_budget_is_reported_not_forced():
+    plan = {"basket": [line("Pork", 30), line("Chicken", 14)],
+            "meals": [meal("Pork roast", ["Pork"]), meal("Chicken soup", ["Chicken"])]}
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 40})
+    assert [l["name"] for l in fixed["basket"]] == ["Pork", "Chicken"]    # nothing was removed
+    assert [p["type"] for p in report["problems"]] == ["over_budget"]
+
+    plan["basket"][1] = line("Chicken", 14, quantity=2)                  # but one fewer is allowed
+    fixed, report = validate_plan(plan, {**PROFILE, "budget": 40})
+    assert fixed["estimated_total"] == 37 and report["problems"] == []
