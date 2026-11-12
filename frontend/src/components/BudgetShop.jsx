@@ -17,9 +17,14 @@ const GROUP_ORDER = [
 // "2", "1.5": how many of a listing to buy, without trailing zeros.
 const qty = (v) => (v == null ? "1" : String(Number(Number(v).toFixed(2))));
 
-// "x2" for packs, "1.5 kg" for items sold by weight.
-const amount = (it) =>
-  it.sold_by_weight ? `${qty(it.quantity)} kg` : `x${qty(it.quantity)}`;
+// How much to buy, always as a weight or a count: "1.5 kg" when sold by
+// weight, "340 g" or "2 × 340 g" when the flyer gives a size, else "1 pack".
+const amount = (it) => {
+  const n = qty(it.quantity);
+  if (it.sold_by_weight) return `${n} kg`;
+  if (it.size) return n === "1" ? it.size : `${n} × ${it.size}`;
+  return n === "1" ? "1 pack" : `${n} packs`;
+};
 
 // Sections 2-4 of the results page:
 //   2. Your weekly basket (hero) — items, running total, budget verdict, swap
@@ -126,7 +131,9 @@ export default function BudgetShop({ result, budget }) {
                     ? `${qty(it.quantity)} kg × ${money(it.price)}/kg (${money(
                         it.listed_price
                       )}/${it.priced_per} on the flyer)`
-                    : `${qty(it.quantity)} × ${money(it.price)}`}
+                    : `${amount(it)} · ${money(it.price)}${
+                        qty(it.quantity) === "1" ? "" : " each"
+                      }`}
                 </p>
                 <p className="mt-0.5 text-sm italic text-muted/90">{it.why}</p>
               </div>

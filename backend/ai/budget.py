@@ -12,6 +12,7 @@ get the arithmetic wrong.
 """
 
 import logging
+import re
 
 from ai.candidates import bucket_for
 from ai.client import call_claude_json
@@ -144,6 +145,11 @@ OTHER RULES
 - Respect the dietary restriction strictly (e.g. Halal = no pork or alcohol,
   Gluten-free = avoid wheat/barley, Vegetarian/Vegan = no meat/seafood, Vegan
   also no dairy or eggs).
+- SENSIBLE PACK SIZES. Pick the smallest pack that covers the servings. Do not
+  buy a bulk bag (5 lb of potatoes, a 7 lb bag of onions, a 4 kg bag of rice)
+  for one or two servings; buy one only when several meals use it. When a
+  small and a large pack of the same thing are both on the list, take the
+  small one unless the meals really need more.
 - For "sold by weight" deals, buy a realistic weight for the servings (roughly
   150 to 200 g of meat per serving); the cost is its $/kg price times the kg.
 - The basket total is each item's price times its quantity. Keep it at or
@@ -260,6 +266,26 @@ def _number(value, default=None):
     return number if number == number else default  # NaN -> default
 
 
+_COUNT_RE = re.compile(r"\b(\d+)\s*(?:pk|pack|ct|count|'s)\b", re.IGNORECASE)
+
+
+def pack_size(deal: dict) -> str | None:
+    """What one unit of a deal is: "340 g", "1.81 kg", "12 pack", or None.
+
+    None means the flyer gives no size (the UI then says "1 pack"), and also
+    covers deals sold by weight, where the shopper chooses the amount.
+    """
+    if _sold_by_weight(deal):
+        return None
+    weight = _number(deal.get("weight_kg"))
+    if weight and weight > 0:
+        if weight < 1:
+            return f"{round(weight * 1000):g} g"
+        return f"{round(weight, 2):g} kg"
+    count = _COUNT_RE.search(deal.get("clean_name") or "")
+    return f"{int(count.group(1))} pack" if count and int(count.group(1)) > 1 else None
+
+
 def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
     """Turn the model's choices into the plan the API returns.
 
@@ -300,6 +326,7 @@ def finalize_plan(raw, deals: list[dict], profile: dict) -> dict:
             "deal_name": deal.get("clean_name"),
             "price": round(price, 2),
             "quantity": quantity,
+            "size": pack_size(deal),  # what one unit is; None if the flyer doesn't say
             "why": str(entry.get("why") or "").strip(),
             "group": _BUCKET_GROUP.get(bucket, "Other"),
             # For by-weight items "price" is per kg and "quantity" is kg;

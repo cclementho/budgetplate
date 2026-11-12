@@ -336,3 +336,18 @@ def test_route_returns_a_cuisine_note_when_few_deals_fit(claude, monkeypatch):
         "postal_code": "N6G 2J8", "merchant": "FreshCo", "budget": 60, "cuisines": ["Mexican"]}).json()
     assert body["cuisine_note"].startswith("Not many Mexican staples on sale at FreshCo")
     assert 'Never call an ingredient "Chinese"' in build_budget_prompt(PROFILE, DEALS)
+
+
+def test_every_basket_item_gets_a_size_when_the_flyer_has_one():
+    from ai.budget import pack_size
+
+    assert pack_size({"clean_name": "Baby Carrots", "weight_kg": 0.34}) == "340 g"
+    assert pack_size({"clean_name": "Aman's Lentils", "weight_kg": 1.81}) == "1.81 kg"
+    assert pack_size({"clean_name": "Large Eggs 12 Pk"}) == "12 pack"
+    assert pack_size({"clean_name": "Bok Choy"}) is None                       # UI shows "1 pack"
+    assert pack_size({"clean_name": "Pork Roast", "priced_per": "lb", "price_per_kg": 4.41,
+                      "weight_kg": 2.0}) is None                               # bought by the kg
+    plan = finalize_plan({"basket": [{"id": 2, "quantity": 1}]}, DEALS, PROFILE)
+    assert "size" in plan["basket"][0]
+    prompt = build_budget_prompt(PROFILE, DEALS)
+    assert "SENSIBLE PACK SIZES" in prompt and "smallest pack that covers the servings" in prompt
